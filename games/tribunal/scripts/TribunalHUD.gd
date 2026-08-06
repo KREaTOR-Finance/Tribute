@@ -33,6 +33,7 @@ var _p2_name: Label
 var _p2_hp_text: Label
 
 var _banner_tween: Tween
+var _chain_label: Label
 
 
 func _ready() -> void:
@@ -134,6 +135,25 @@ func _connect_fighter(fighter: Node, slot: int) -> void:
 	if fighter.has_signal("player_died"):
 		if not fighter.player_died.is_connected(_on_fighter_died.bind(fighter)):
 			fighter.player_died.connect(_on_fighter_died.bind(fighter))
+	if slot == 1 and fighter.has_signal("judgement_chain_changed"):
+		if not fighter.judgement_chain_changed.is_connected(_on_chain):
+			fighter.judgement_chain_changed.connect(_on_chain)
+
+
+func _on_chain(chain: int, ready: bool) -> void:
+	if _chain_label == null:
+		return
+	if chain <= 0:
+		_chain_label.text = ""
+		_chain_label.visible = false
+		return
+	_chain_label.visible = true
+	if ready:
+		_chain_label.text = "JUDGEMENT ×%d" % chain
+		_chain_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.25))
+	else:
+		_chain_label.text = "CHAIN %d" % chain
+		_chain_label.add_theme_color_override("font_color", Color(0.85, 0.55, 1.0))
 
 
 func _disconnect_fighter(fighter: Node) -> void:
@@ -322,6 +342,21 @@ func _build_ui() -> void:
 	_banner.text = "FIGHT"
 	_banner.visible = false
 	root.add_child(_banner)
+
+	# Judgement Chain readout (Tribunal unique)
+	_chain_label = Label.new()
+	_chain_label.name = "JudgementChain"
+	_chain_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_chain_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_chain_label.offset_left = -160
+	_chain_label.offset_right = 160
+	_chain_label.offset_top = -72
+	_chain_label.offset_bottom = -40
+	_chain_label.add_theme_font_size_override("font_size", 22)
+	_chain_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	_chain_label.add_theme_constant_override("outline_size", 5)
+	_chain_label.visible = false
+	root.add_child(_chain_label)
 
 
 func _make_fighter_panel(is_p1: bool) -> PanelContainer:

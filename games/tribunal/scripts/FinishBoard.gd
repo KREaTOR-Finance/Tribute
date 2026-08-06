@@ -3,6 +3,7 @@ class_name FinishBoard
 ## End-of-round results board — winner, stats, rematch.
 
 signal rematch_requested
+signal replay_requested
 
 const CRIMSON := Color(0.9, 0.2, 0.22)
 const AZURE := Color(0.25, 0.5, 1.0)
@@ -16,6 +17,8 @@ var _subtitle: Label
 var _rows: VBoxContainer
 var _hint: Label
 var _visible_board: bool = false
+var _has_replay: bool = false
+var _replay_mode: bool = false
 
 
 func _ready() -> void:
@@ -32,6 +35,8 @@ func show_results(payload: Dictionary) -> void:
 	var is_draw: bool = bool(payload.get("draw", false))
 	var duration: float = float(payload.get("duration", 0.0))
 	var reason: String = str(payload.get("reason", "elimination"))
+	_has_replay = bool(payload.get("has_replay", false))
+	_replay_mode = false
 
 	if is_draw:
 		_title.text = "DRAW"
@@ -53,7 +58,10 @@ func show_results(payload: Dictionary) -> void:
 	for f in fighters:
 		_rows.add_child(_make_stat_row(f))
 
-	_hint.text = "R  ·  REMATCH          ESC  ·  RELEASE MOUSE"
+	if _has_replay:
+		_hint.text = "R  ·  REMATCH     G  ·  REPLAY     ESC  ·  MOUSE"
+	else:
+		_hint.text = "R  ·  REMATCH          ESC  ·  RELEASE MOUSE"
 	# Dim in
 	_dim.modulate.a = 0.0
 	_panel.modulate.a = 0.0
@@ -72,6 +80,18 @@ func is_showing() -> bool:
 	return _visible_board
 
 
+func set_replay_mode(on: bool) -> void:
+	_replay_mode = on
+	if _panel:
+		_panel.visible = not on
+	if _dim:
+		_dim.modulate.a = 0.25 if on else 1.0
+	if _hint:
+		_hint.text = "REPLAY…  G skip · R rematch" if on else (
+			"R  ·  REMATCH     G  ·  REPLAY" if _has_replay else "R  ·  REMATCH"
+		)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not _visible_board:
 		return
@@ -79,6 +99,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_R:
 			rematch_requested.emit()
 			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_G and (_has_replay or _replay_mode):
+			replay_requested.emit()
+			get_viewport().set_input_as_handled()
+		elif event.is_action_pressed("ui_accept") and _has_replay:
+			# Pad A also can start rematch; use Select-style via ui_focus_next? Keep R.
+			pass
 
 
 func _build() -> void:

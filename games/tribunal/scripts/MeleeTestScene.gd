@@ -15,6 +15,9 @@ const ScavengingSystemScript = preload("res://scripts/ScavengingSystem.gd")
 const TrapSystemScript = preload("res://scripts/TrapSystem.gd")
 const ArenaEnvUtil = preload("res://scripts/ArenaEnvironment.gd")
 const FinishBoardScript = preload("res://scripts/FinishBoard.gd")
+const GamepadBootstrapScript = preload("res://scripts/GamepadBootstrap.gd")
+const VisualPolishScript = preload("res://scripts/VisualPolish.gd")
+const ReplaySystemScript = preload("res://scripts/ReplaySystem.gd")
 
 @export var use_hotseat: bool = true
 @export var capture_mouse_on_start: bool = true
@@ -40,15 +43,18 @@ var trap_system = null
 var scavenging_system = null
 var tribunal_hud: CanvasLayer = null
 var finish_board = null
+var replay_system = null
 var _arena_info: Dictionary = {}
 var _round_frozen: bool = true  # intro freeze
 
 func _ready():
-	print("=== TRIBUNAL — FINISHED ROUND ===")
+	print("=== TRIBUNAL — CONSOLE SLICE ===")
+	GamepadBootstrapScript.ensure()
 	if capture_mouse_on_start:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 	_apply_culling_environment()
+	VisualPolishScript.apply_world(self)
 	# Coherent finished courtyard (floor, walls, designed cover, spawn pads)
 	_arena_info = ArenaEnvUtil.build(self)
 
@@ -147,6 +153,13 @@ func _setup_finish_board() -> void:
 	add_child(finish_board)
 	if finish_board.has_signal("rematch_requested"):
 		finish_board.rematch_requested.connect(_on_rematch)
+	if finish_board.has_signal("replay_requested"):
+		finish_board.replay_requested.connect(_on_replay_requested)
+	# Replay recorder
+	replay_system = ReplaySystemScript.new()
+	replay_system.name = "ReplaySystem"
+	add_child(replay_system)
+	replay_system.bind_subjects([player1, player2], camera if camera else null)
 
 
 func _set_fighters_frozen(frozen: bool) -> void:
@@ -161,11 +174,35 @@ func _set_fighters_frozen(frozen: bool) -> void:
 
 func _on_match_started() -> void:
 	_set_fighters_frozen(false)
-	print("ROUND LIVE")
+	if replay_system and replay_system.has_method("start_recording"):
+		replay_system.start_recording()
+	print("ROUND LIVE · recording replay · Judgement Chain live")
 
 
 func _on_rematch() -> void:
 	get_tree().reload_current_scene()
+
+
+func _on_replay_requested() -> void:
+	if replay_system == null:
+		return
+	if replay_system.playing:
+		replay_system.stop_playback()
+		return
+	if replay_system.has_method("stop_recording"):
+		replay_system.stop_recording()
+	if finish_board and finish_board.has_method("set_replay_mode"):
+		finish_board.set_replay_mode(true)
+	replay_system.start_playback(self)
+	if replay_system.has_signal("playback_finished"):
+		if not replay_system.playback_finished.is_connected(_on_replay_finished):
+			replay_system.playback_finished.connect(_on_replay_finished)
+
+
+func _on_replay_finished() -> void:
+	if finish_board and finish_board.has_method("set_replay_mode"):
+		finish_board.set_replay_mode(false)
+	print("Replay finished")
 
 
 func _configure_match_stakes() -> void:
@@ -363,8 +400,8 @@ func _setup_ui():
 
 	if ui_layer:
 		if instructions_label:
-			instructions_label.text = """P1 E scavenge · Q trap · C dodge · LMB/RMB fight    P2 H scavenge · B trap · V dodge
-Round: FIGHT → last stand → FINISH BOARD · R rematch · TAB cam · ESC mouse"""
+			instructions_label.text = """P1: stick/WASD · pad look · X/Y light heavy · LB block · RB shove · B dodge · A scavenge
+Judgement Chain: land hits → JUDGEMENT heavy · G replay after match · R rematch"""
 			instructions_label.offset_left = 16
 			instructions_label.offset_top = 640
 			instructions_label.offset_right = 980
@@ -467,17 +504,20 @@ func _on_player_died(player):
 func _on_match_ended(winner):
 	print("MATCH ENDED — Winner:", winner.name if winner else "Draw")
 	_set_fighters_frozen(true)
+	if replay_system and replay_system.has_method("stop_recording"):
+		replay_system.stop_recording()
 	# Stop zone damage spam
 	if zone_system and zone_system.has_method("stop"):
 		zone_system.stop()
 	# Full finish board
 	if finish_board and arena_manager and arena_manager.has_method("build_results_payload"):
 		var payload: Dictionary = arena_manager.build_results_payload(winner)
+		payload["has_replay"] = replay_system != null and replay_system.has_replay()
 		finish_board.show_results(payload)
 	elif tribunal_hud and tribunal_hud.has_method("show_winner_banner"):
 		tribunal_hud.show_winner_banner(winner)
 	if instructions_label:
-		instructions_label.text = "ROUND OVER — R rematch"
+		instructions_label.text = "ROUND OVER — R rematch · G replay"
 
 
 func _unhandled_input(event: InputEvent) -> void:

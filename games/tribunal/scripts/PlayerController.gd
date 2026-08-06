@@ -57,9 +57,23 @@ class_name PlayerController
 @export var hit_reaction_duration: float = 0.18
 @export var heavy_knockback_multiplier: float = 1.6
 
+# === TRIBUNAL UNIQUE: Judgement Chain ===
+# Land hits within the window to build chain. At 3+, next heavy is Judgement (free STA + bonus dmg + gold FX).
+@export var chain_window: float = 0.9
+@export var chain_judgement_threshold: int = 3
+@export var judgement_damage_mul: float = 1.35
+@export var pad_look_sens: float = 2.6
+@export var attack_buffer_time: float = 0.14
+
 var health: int = 100
 var stamina: float = 100.0
 var is_exhausted: bool = false
+var judgement_chain: int = 0
+var chain_timer: float = 0.0
+var judgement_ready: bool = false
+var _attack_buffer: String = ""  # "light" | "heavy" | ""
+var _attack_buffer_t: float = 0.0
+var _chain_mats: Array = []
 
 # === CULLING MELEE STATE MACHINE ===
 enum MeleeState { IDLE, LIGHT_ACTIVE, LIGHT_RECOVERY, HEAVY_WINDUP, HEAVY_ACTIVE, HEAVY_RECOVERY, BLOCKING, SHOVING, DODGING, DEAD }
@@ -101,6 +115,7 @@ signal player_died
 signal health_changed(new_health: int)
 signal stamina_changed(new_stamina: float)
 signal weapon_equipped(weapon_name: String)
+signal judgement_chain_changed(chain: int, ready: bool)
 
 # Preload for particles (will be instantiated on hits)
 const HitParticlesScene = preload("res://scripts/HitParticles.tscn")
@@ -367,6 +382,29 @@ func _physics_process(delta: float):
 		local_hitstop = max(0.0, local_hitstop - delta)
 		step = delta * 0.15
 
+	# Judgement chain decay
+	if chain_timer > 0.0:
+		chain_timer = maxf(0.0, chain_timer - step)
+		if chain_timer <= 0.0 and judgement_chain > 0:
+			_set_chain(0)
+	# Attack input buffer flush
+	if _attack_buffer_t > 0.0:
+		_attack_buffer_t = maxf(0.0, _attack_buffer_t - step)
+		if _attack_buffer_t <= 0.0:
+			_attack_buffer = ""
+		elif _can_act():
+			var buf := _attack_buffer
+			_attack_buffer = ""
+			_attack_buffer_t = 0.0
+			if buf == "light":
+				_perform_light_attack()
+			elif buf == "heavy":
+				start_heavy_windup()
+
+	# Gamepad right-stick look (P1) — seamless camera/facing
+	if player_id == 1:
+		_apply_pad_look(step)
+
 	if not is_on_floor():
 		velocity.y -= gravity * step
 
@@ -501,26 +539,54 @@ func _advance_melee_state() -> void:
 
 func _get_movement_input() -> Vector2:
 	var input = Vector2.ZERO
-
 	if player_id == 1:
-		if Input.is_action_pressed("move_forward"):  input.y -= 1
-		if Input.is_action_pressed("move_backward"): input.y += 1
-		if Input.is_action_pressed("move_left"):     input.x -= 1
-		if Input.is_action_pressed("move_right"):    input.x += 1
+		# Strength-based = seamless stick + keys
+		input.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
+		input.y = Input.get_action_strength("move_backward") - Input.get_action_strength("move_forward")
 	else:
-		# Player 2 hotseat keys
 		if Input.is_action_pressed("p2_move_forward"):  input.y -= 1
 		if Input.is_action_pressed("p2_move_backward"): input.y += 1
 		if Input.is_action_pressed("p2_move_left"):     input.x -= 1
 		if Input.is_action_pressed("p2_move_right"):    input.x += 1
-
+	if input.length() > 1.0:
+		input = input.normalized()
+	elif input.length() < 0.18:
+		input = Vector2.ZERO
 	return input
+
+
+func _apply_pad_look(delta: float) -> void:
+	if not InputMap.has_action("look_left"):
+		return
+	var lx := Input.get_action_strength("look_right") - Input.get_action_strength("look_left")
+	var ly := Input.get_action_strength("look_down") - Input.get_action_strength("look_up")
+	if absf(lx) < 0.12:
+		lx = 0.0
+	if absf(ly) < 0.12:
+		ly = 0.0
+	if lx == 0.0 and ly == 0.0:
+		return
+	_mouse_yaw -= lx * pad_look_sens * delta
+	_mouse_pitch = clampf(_mouse_pitch - ly * pad_look_sens * 0.65 * delta, deg_to_rad(-50), deg_to_rad(30))
+	rotation.y = _mouse_yaw
+
+
+func _queue_attack(kind: String) -> void:
+	if _can_act():
+		if kind == "light":
+			_perform_light_attack()
+		else:
+			start_heavy_windup()
+	else:
+		_attack_buffer = kind
+		_attack_buffer_t = attack_buffer_time
+
 
 func _handle_combat_input(event):
 	if (player_id == 1 and event.is_action_pressed("light_attack")) or (player_id == 2 and event.is_action_pressed("p2_light_attack")):
-		_perform_light_attack()
+		_queue_attack("light")
 	if (player_id == 1 and event.is_action_pressed("heavy_attack")) or (player_id == 2 and event.is_action_pressed("p2_heavy_attack")):
-		start_heavy_windup()
+		_queue_attack("heavy")
 	if (player_id == 1 and event.is_action_pressed("block")) or (player_id == 2 and event.is_action_pressed("p2_block")):
 		start_block()
 	elif (player_id == 1 and event.is_action_released("block")) or (player_id == 2 and event.is_action_released("p2_block")):
@@ -528,7 +594,9 @@ func _handle_combat_input(event):
 	if (player_id == 1 and event.is_action_pressed("shove")) or (player_id == 2 and event.is_action_pressed("p2_shove")):
 		_perform_shove()
 
-	# Dodge / roll — P1: C or Alt, P2: V
+	# Dodge — keys + pad action
+	if player_id == 1 and event.is_action_pressed("dodge"):
+		_perform_dodge()
 	if event is InputEventKey and event.pressed and not event.echo:
 		var kc: int = event.keycode
 		var pkc: int = event.physical_keycode
@@ -537,8 +605,12 @@ func _handle_combat_input(event):
 		elif player_id == 2 and (kc == KEY_V or pkc == KEY_V):
 			_perform_dodge()
 
-	# Weapon swap (Culling tool fantasy) + trap place (Q / B)
+	# Interact / trap via actions (pad) + keys
 	if player_id == 1:
+		if event.is_action_pressed("interact"):
+			_try_scavenge()
+		if event.is_action_pressed("place_trap"):
+			_try_place_trap()
 		if event is InputEventKey and event.pressed:
 			if event.keycode == KEY_1:
 				_equip_test_weapon(Weapon.WeaponType.SWORD)
@@ -546,9 +618,9 @@ func _handle_combat_input(event):
 				_equip_test_weapon(Weapon.WeaponType.AXE)
 			elif event.keycode == KEY_3:
 				_equip_test_weapon(Weapon.WeaponType.DAGGER)
-			elif event.keycode == KEY_BRACKETLEFT:  # [
+			elif event.keycode == KEY_BRACKETLEFT:
 				_cycle_character_skin()
-			elif event.keycode == KEY_BRACKETRIGHT:  # ]
+			elif event.keycode == KEY_BRACKETRIGHT:
 				_cycle_weapon_skin()
 			elif event.keycode == KEY_Q:
 				_try_place_trap()
@@ -564,15 +636,11 @@ func _handle_combat_input(event):
 				_equip_test_weapon(Weapon.WeaponType.DAGGER)
 			elif event.keycode == KEY_APOSTROPHE:
 				_cycle_character_skin()
-			elif event.keycode == KEY_SEMICOLON:
-				# keep shove on ; for p2 — use KEY_PERIOD for weapon skin
-				pass
 			elif event.keycode == KEY_PERIOD:
 				_cycle_weapon_skin()
 			elif event.keycode == KEY_B:
 				_try_place_trap()
 			elif event.keycode == KEY_H:
-				# P2 interact (E is free on P1; H = "hold to loot" mnemonic)
 				_try_scavenge()
 
 func _equip_test_weapon(weapon_type: int):
@@ -702,15 +770,22 @@ func _cycle_weapon_skin() -> void:
 		print(name, " weapon skin -> ", weapon_skin_id)
 
 func start_heavy_windup():
-	if not _can_act() or stamina < 25:
+	if not _can_act():
 		return
-	stamina -= 25
-	stamina_changed.emit(stamina)
-	_set_melee_state(MeleeState.HEAVY_WINDUP, heavy_attack_windup)
+	var free_judgement := judgement_ready and judgement_chain >= chain_judgement_threshold
+	if not free_judgement and stamina < 25:
+		return
+	if free_judgement:
+		print(name, " JUDGEMENT heavy (chain ", judgement_chain, ")")
+	else:
+		stamina -= 25
+		stamina_changed.emit(stamina)
+	_set_melee_state(MeleeState.HEAVY_WINDUP, heavy_attack_windup * (0.85 if free_judgement else 1.0))
 	_notify_camera_swing(true)
 	if _combat_audio:
 		_combat_audio.play_whoosh(true)
-	print(name, " winding heavy (readable commit)...")
+	if not free_judgement:
+		print(name, " winding heavy (readable commit)...")
 
 func _weapon_range_mul() -> float:
 	if current_weapon and current_weapon.has_method("get_range_mul"):
@@ -854,8 +929,13 @@ func _on_melee_hit(body):
 	hit_this_swing[id] = true
 
 	var is_heavy = active_is_heavy or melee_state == MeleeState.HEAVY_ACTIVE
+	var is_judgement := is_heavy and judgement_ready and judgement_chain >= chain_judgement_threshold
 	var damage = heavy_attack_damage if is_heavy else light_attack_damage
+	if is_judgement:
+		damage = int(float(damage) * judgement_damage_mul)
 	var kb = hit_knockback_force * (heavy_knockback_multiplier if is_heavy else 1.0)
+	if is_judgement:
+		kb *= 1.25
 
 	if body is PlayerController:
 		body.take_damage(damage, self)
@@ -866,11 +946,14 @@ func _on_melee_hit(body):
 	else:
 		return
 
-	_apply_hit_feedback(is_heavy)
-	_spawn_hit_particles(body.global_position, is_heavy)
+	_build_judgement_chain(is_judgement)
+	_apply_hit_feedback(is_heavy or is_judgement)
+	_spawn_hit_particles(body.global_position, is_heavy or is_judgement)
 	if _combat_audio:
-		_combat_audio.play_hit(is_heavy)
-	_notify_camera_hit(is_heavy)
+		_combat_audio.play_hit(is_heavy or is_judgement)
+	_notify_camera_hit(is_heavy or is_judgement)
+	if is_judgement:
+		_set_chain(0)  # spend Judgement
 
 func _spawn_hit_particles(world_pos: Vector3, is_heavy: bool):
 	var scene := get_tree().current_scene
@@ -979,8 +1062,50 @@ func _collect_mesh_instances(node: Node, out: Array) -> void:
 		_collect_mesh_instances(c, out)
 
 
+func _build_judgement_chain(spent_judgement: bool = false) -> void:
+	if spent_judgement:
+		return
+	_set_chain(judgement_chain + 1)
+	chain_timer = chain_window
+
+
+func _set_chain(v: int) -> void:
+	judgement_chain = maxi(0, v)
+	judgement_ready = judgement_chain >= chain_judgement_threshold
+	judgement_chain_changed.emit(judgement_chain, judgement_ready)
+	_apply_chain_visual()
+	if judgement_ready:
+		print(name, " JUDGEMENT READY (chain ", judgement_chain, ")")
+
+
+func _apply_chain_visual() -> void:
+	var rig = get_node_or_null("SkinRig")
+	if rig == null:
+		return
+	var meshes: Array = []
+	_collect_mesh_instances(rig, meshes)
+	for m in meshes:
+		if not (m is MeshInstance3D):
+			continue
+		var mi := m as MeshInstance3D
+		if mi.material_override == null or not (mi.material_override is StandardMaterial3D):
+			continue
+		var mat: StandardMaterial3D = mi.material_override
+		if judgement_ready:
+			mat.emission_enabled = true
+			mat.emission = Color(1.0, 0.78, 0.2)
+			mat.emission_energy_multiplier = 2.4
+		elif judgement_chain >= 1:
+			mat.emission_enabled = true
+			mat.emission = Color(0.75, 0.4, 1.0)
+			mat.emission_energy_multiplier = 0.55 + 0.35 * float(judgement_chain)
+		else:
+			mat.emission_energy_multiplier = 0.0
+
+
 func die(attacker: Node):
 	print(name, " DIED to ", attacker.name if attacker else "unknown")
+	_set_chain(0)
 	_set_melee_state(MeleeState.DEAD)
 	_spawn_kill_particles()
 	if _char_anim:
