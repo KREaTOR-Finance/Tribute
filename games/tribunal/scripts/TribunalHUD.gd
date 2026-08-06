@@ -1,5 +1,4 @@
-# TribunalHUD.gd — Culling-readable combat HUD for MeleeTest.
-# Health/stamina bars (crimson P1 / azure P2), weapons, match timer, elim feed, fight/winner banner.
+# TribunalHUD.gd — combat HUD for MeleeTest (vitals, timer, feed, countdown, scavenge channel).
 
 extends CanvasLayer
 class_name TribunalHUD
@@ -9,7 +8,8 @@ const AZURE := Color(0.18, 0.42, 0.95, 1.0)
 const STA_FILL := Color(0.95, 0.82, 0.22, 1.0)
 const BAR_BG := Color(0.08, 0.08, 0.1, 0.82)
 const PANEL_BG := Color(0.05, 0.05, 0.07, 0.72)
-const FEED_MAX := 4
+const SCAV_FILL := Color(0.95, 0.78, 0.2, 1.0)
+const FEED_MAX := 5
 
 var _p1: Node = null
 var _p2: Node = null
@@ -19,6 +19,7 @@ var _feed_lines: PackedStringArray = PackedStringArray()
 var _timer_label: Label
 var _banner: Label
 var _feed_label: Label
+var _brand_label: Label
 
 var _p1_hp: ProgressBar
 var _p1_sta: ProgressBar
@@ -34,13 +35,17 @@ var _p2_hp_text: Label
 
 var _banner_tween: Tween
 var _chain_label: Label
+var _scav_panel: PanelContainer
+var _scav_bar: ProgressBar
+var _scav_label: Label
+var _scav_active: bool = false
 
 
 func _ready() -> void:
 	layer = 20
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_ui()
-	show_fight_banner()
+	# Intro countdown is driven by ArenaManager — no premature FIGHT flash
 
 
 func _process(_delta: float) -> void:
@@ -64,6 +69,10 @@ func bind_arena(arena: Node) -> void:
 			_arena.match_ended.disconnect(_on_match_ended)
 		if _arena.has_signal("player_eliminated") and _arena.player_eliminated.is_connected(_on_player_eliminated):
 			_arena.player_eliminated.disconnect(_on_player_eliminated)
+		if _arena.has_signal("intro_countdown") and _arena.intro_countdown.is_connected(_on_intro_countdown):
+			_arena.intro_countdown.disconnect(_on_intro_countdown)
+		if _arena.has_signal("match_started") and _arena.match_started.is_connected(_on_match_started_banner):
+			_arena.match_started.disconnect(_on_match_started_banner)
 	_arena = arena
 	if _arena == null:
 		return
@@ -71,7 +80,14 @@ func bind_arena(arena: Node) -> void:
 		_arena.match_ended.connect(_on_match_ended)
 	if _arena.has_signal("player_eliminated") and not _arena.player_eliminated.is_connected(_on_player_eliminated):
 		_arena.player_eliminated.connect(_on_player_eliminated)
+	if _arena.has_signal("intro_countdown") and not _arena.intro_countdown.is_connected(_on_intro_countdown):
+		_arena.intro_countdown.connect(_on_intro_countdown)
+	if _arena.has_signal("match_started") and not _arena.match_started.is_connected(_on_match_started_banner):
+		_arena.match_started.connect(_on_match_started_banner)
 	_update_timer()
+	# Kick first countdown frame immediately if still in intro
+	if "phase" in _arena and int(_arena.phase) == 0:
+		_on_intro_countdown(3, "3")
 
 
 func set_weapon_name(player_id: int, weapon_name: String) -> void:
@@ -88,21 +104,65 @@ func push_feed(line: String) -> void:
 		_feed_label.text = "\n".join(_feed_lines)
 
 
-func show_fight_banner() -> void:
+func show_countdown(label: String) -> void:
 	if not _banner:
 		return
-	_banner.text = "FIGHT"
-	_banner.modulate = Color(1, 1, 1, 1)
+	_banner.text = label
+	var is_hunt := label.to_upper() == "HUNT" or label.to_upper() == "FIGHT"
+	_banner.modulate = Color(1.0, 0.88, 0.35, 1.0) if is_hunt else Color(1, 1, 1, 1)
+	_banner.add_theme_font_size_override("font_size", 72 if is_hunt else 80)
 	_banner.visible = true
 	if _banner_tween and _banner_tween.is_valid():
 		_banner_tween.kill()
-	_banner_tween = create_tween()
-	_banner_tween.tween_interval(1.1)
-	_banner_tween.tween_property(_banner, "modulate:a", 0.0, 0.55)
-	_banner_tween.tween_callback(func():
-		if _banner:
-			_banner.visible = false
-	)
+	_banner.modulate.a = 1.0
+	# Only tween HUNT fade-out; 3-2-1 stay solid until next step
+	if is_hunt:
+		_banner_tween = create_tween()
+		_banner_tween.tween_interval(0.85)
+		_banner_tween.tween_property(_banner, "modulate:a", 0.0, 0.45)
+		_banner_tween.tween_callback(func():
+			if _banner:
+				_banner.visible = false
+		)
+
+
+func show_fight_banner() -> void:
+	show_countdown("HUNT")
+
+
+func set_scavenge_progress(player: Node, progress: float) -> void:
+	if _scav_panel == null or _scav_bar == null:
+		return
+	_scav_active = true
+	_scav_panel.visible = true
+	_scav_bar.value = clampf(progress, 0.0, 1.0) * 100.0
+	var who: String = str(player.name) if player else "Scavenge"
+	if _scav_label:
+		_scav_label.text = "%s · scavenging" % who
+	# Subtle HUD pulse
+	var pulse := 0.85 + 0.15 * sin(Time.get_ticks_msec() * 0.012)
+	_scav_panel.modulate = Color(1, 1, 1, pulse)
+
+
+func clear_scavenge_progress() -> void:
+	_scav_active = false
+	if _scav_panel:
+		_scav_panel.visible = false
+		_scav_panel.modulate = Color.WHITE
+	if _scav_bar:
+		_scav_bar.value = 0.0
+
+
+func _on_intro_countdown(step: int, label: String) -> void:
+	show_countdown(label)
+	if step == 0:
+		push_feed("ROUND · HUNT")
+
+
+func _on_match_started_banner() -> void:
+	# Ensure HUNT flash lands if countdown edge was missed
+	if _banner and _banner.visible and _banner.text in ["3", "2", "1"]:
+		show_countdown("HUNT")
 
 
 func show_winner_banner(winner: Node) -> void:
@@ -284,6 +344,22 @@ func _build_ui() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 
+	# Product brand — subtle top strip
+	_brand_label = Label.new()
+	_brand_label.name = "Brand"
+	_brand_label.text = "TRIBUNAL"
+	_brand_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_brand_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_brand_label.offset_left = -80
+	_brand_label.offset_right = 80
+	_brand_label.offset_top = 2
+	_brand_label.offset_bottom = 18
+	_brand_label.add_theme_font_size_override("font_size", 11)
+	_brand_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.6, 0.85))
+	_brand_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	_brand_label.add_theme_constant_override("outline_size", 2)
+	root.add_child(_brand_label)
+
 	# Match timer — top center
 	_timer_label = Label.new()
 	_timer_label.name = "MatchTimer"
@@ -292,14 +368,54 @@ func _build_ui() -> void:
 	_timer_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_timer_label.offset_left = -80
 	_timer_label.offset_right = 80
-	_timer_label.offset_top = 12
-	_timer_label.offset_bottom = 48
+	_timer_label.offset_top = 16
+	_timer_label.offset_bottom = 52
 	_timer_label.add_theme_font_size_override("font_size", 28)
 	_timer_label.add_theme_color_override("font_color", Color(0.95, 0.95, 0.92))
 	_timer_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	_timer_label.add_theme_constant_override("outline_size", 4)
 	_timer_label.text = "05:00"
 	root.add_child(_timer_label)
+
+	# Scavenge channel bar — center lower
+	_scav_panel = PanelContainer.new()
+	_scav_panel.name = "ScavengePanel"
+	_scav_panel.visible = false
+	_scav_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_scav_panel.offset_left = -140
+	_scav_panel.offset_right = 140
+	_scav_panel.offset_top = 72
+	_scav_panel.offset_bottom = 118
+	var scav_style := StyleBoxFlat.new()
+	scav_style.bg_color = Color(0.06, 0.06, 0.08, 0.88)
+	scav_style.border_color = SCAV_FILL
+	scav_style.border_width_left = 2
+	scav_style.border_width_right = 2
+	scav_style.border_width_top = 2
+	scav_style.border_width_bottom = 2
+	scav_style.corner_radius_top_left = 6
+	scav_style.corner_radius_top_right = 6
+	scav_style.corner_radius_bottom_left = 6
+	scav_style.corner_radius_bottom_right = 6
+	scav_style.content_margin_left = 10
+	scav_style.content_margin_right = 10
+	scav_style.content_margin_top = 6
+	scav_style.content_margin_bottom = 8
+	_scav_panel.add_theme_stylebox_override("panel", scav_style)
+	var scav_v := VBoxContainer.new()
+	scav_v.add_theme_constant_override("separation", 4)
+	_scav_panel.add_child(scav_v)
+	_scav_label = Label.new()
+	_scav_label.text = "Scavenging…"
+	_scav_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_scav_label.add_theme_font_size_override("font_size", 13)
+	_scav_label.add_theme_color_override("font_color", SCAV_FILL)
+	scav_v.add_child(_scav_label)
+	_scav_bar = _make_bar(SCAV_FILL)
+	_scav_bar.custom_minimum_size = Vector2(0, 14)
+	_scav_bar.value = 0
+	scav_v.add_child(_scav_bar)
+	root.add_child(_scav_panel)
 
 	# P1 panel — top left (crimson)
 	var p1_panel := _make_fighter_panel(true)
@@ -335,11 +451,11 @@ func _build_ui() -> void:
 	_banner.offset_right = 280
 	_banner.offset_top = -48
 	_banner.offset_bottom = 48
-	_banner.add_theme_font_size_override("font_size", 64)
+	_banner.add_theme_font_size_override("font_size", 80)
 	_banner.add_theme_color_override("font_color", Color(1, 1, 1, 1))
 	_banner.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
-	_banner.add_theme_constant_override("outline_size", 8)
-	_banner.text = "FIGHT"
+	_banner.add_theme_constant_override("outline_size", 10)
+	_banner.text = "3"
 	_banner.visible = false
 	root.add_child(_banner)
 

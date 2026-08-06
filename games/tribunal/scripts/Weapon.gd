@@ -25,9 +25,13 @@ var heavy_damage: int = 35
 var heavy_windup: float = 0.55
 var heavy_cooldown: float = 0.9
 var knockback_multiplier: float = 1.0
-# Reach multiplier applied in PlayerController._melee_shape_query
-# Sword mid, axe slightly shorter, dagger shorter (faster profile already in cooldowns)
-var range_mul: float = 1.0
+# Reach — absolute meters used by PlayerController._melee_shape_query
+# Distinct tools: dagger short, sword mid, axe mid-short/wide, spear long
+var range_mul: float = 1.0  # legacy scale (kept for any external reads)
+var light_reach: float = 1.35
+var heavy_reach: float = 1.65
+var hit_radius_light: float = 0.55
+var hit_radius_heavy: float = 0.70
 # Optional horizontal sweep half-angle scale (1.0 = default sphere feel)
 var arc: float = 1.0
 
@@ -48,6 +52,10 @@ func _apply_profile():
 			heavy_cooldown = 0.85
 			knockback_multiplier = 1.1
 			range_mul = 1.0
+			light_reach = 1.35
+			heavy_reach = 1.65
+			hit_radius_light = 0.55
+			hit_radius_heavy = 0.70
 			arc = 1.0
 		WeaponType.AXE:
 			weapon_name = "Axe"
@@ -57,8 +65,12 @@ func _apply_profile():
 			heavy_windup = 0.75
 			heavy_cooldown = 1.15
 			knockback_multiplier = 1.8   # Brutal knockback
-			range_mul = 0.88            # Slightly shorter, heavier
-			arc = 1.15
+			range_mul = 0.88
+			light_reach = 1.22
+			heavy_reach = 1.52
+			hit_radius_light = 0.62
+			hit_radius_heavy = 0.82
+			arc = 1.18
 		WeaponType.DAGGER:
 			weapon_name = "Dagger"
 			light_damage = 8
@@ -67,8 +79,12 @@ func _apply_profile():
 			heavy_windup = 0.35
 			heavy_cooldown = 0.55
 			knockback_multiplier = 0.7
-			range_mul = 0.72            # Shorter, faster
-			arc = 0.85
+			range_mul = 0.72
+			light_reach = 1.05
+			heavy_reach = 1.20
+			hit_radius_light = 0.42
+			hit_radius_heavy = 0.52
+			arc = 0.82
 		WeaponType.SPEAR:
 			weapon_name = "Spear"
 			light_damage = 14
@@ -78,9 +94,13 @@ func _apply_profile():
 			heavy_cooldown = 0.95
 			knockback_multiplier = 1.3
 			range_mul = 1.25
-			arc = 0.7
+			light_reach = 1.70
+			heavy_reach = 2.05
+			hit_radius_light = 0.48
+			hit_radius_heavy = 0.58
+			arc = 0.68
 
-	print("Equipped: ", weapon_name, " (type: ", WeaponType.keys()[weapon_type], ")")
+	print("Equipped: ", weapon_name, " (type: ", WeaponType.keys()[weapon_type], ") reach L/H=", light_reach, "/", heavy_reach)
 
 # These getters are used by PlayerController when a weapon is equipped
 func get_light_damage() -> int:
@@ -106,6 +126,15 @@ func get_range_mul() -> float:
 
 func get_arc() -> float:
 	return arc
+
+func get_light_reach() -> float:
+	return light_reach
+
+func get_heavy_reach() -> float:
+	return heavy_reach
+
+func get_hit_radius(heavy: bool) -> float:
+	return hit_radius_heavy if heavy else hit_radius_light
 
 # Future: equip/unequip logic, visual mesh swap, attack animations per weapon
 func equip(new_type: WeaponType):

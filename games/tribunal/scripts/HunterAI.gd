@@ -211,18 +211,23 @@ func set_target(t: Node3D) -> void:
 	target = t
 
 
-func apply_damage(amount: int, from: Node3D = null, knockback: float = 0.0) -> void:
+func apply_damage(amount: int, from: Node = null, knockback: float = 0.0) -> void:
 	if not _alive:
 		return
 	if from:
 		last_hit_by = from
 	health = max(0, health - amount)
-	if from and knockback > 0.0:
-		var dir := (global_position - from.global_position).normalized()
+	if from and from is Node3D and knockback > 0.0:
+		var dir := (global_position - (from as Node3D).global_position).normalized()
 		velocity += dir * knockback + Vector3.UP * 2.0
 	_flash_hit()
 	if health <= 0:
 		_die()
+
+
+func take_damage(amount: int, attacker: Node = null) -> void:
+	# Alias so PlayerController / traps that call take_damage still credit killer
+	apply_damage(amount, attacker, 0.0)
 
 
 func _flash_hit() -> void:

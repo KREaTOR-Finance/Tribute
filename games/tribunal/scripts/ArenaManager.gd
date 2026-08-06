@@ -9,7 +9,7 @@ enum Phase { INTRO, FIGHT, ENDED }
 @export var match_duration: float = 300.0
 @export var max_players: int = 8
 @export var test_mode_respawn: bool = false
-@export var intro_seconds: float = 1.6
+@export var intro_seconds: float = 3.4
 
 var phase: Phase = Phase.INTRO
 var time_remaining: float = match_duration
@@ -20,7 +20,9 @@ var loot_spawned: int = 0
 var zone_system: Node = null
 var _zone_final_triggered: bool = false
 var _intro_left: float = 0.0
+var _intro_total: float = 3.4
 var _end_reason: String = "elimination"
+var _last_countdown_step: int = -1  # 3,2,1,0(HUNT),-1
 
 # Per-player stats: instance_id -> Dictionary
 var _stats: Dictionary = {}
@@ -29,14 +31,35 @@ signal match_started
 signal match_ended(winner: Node)
 signal player_eliminated(player: Node)
 signal phase_changed(phase: int)
+signal intro_countdown(step: int, label: String)  # 3,2,1,0 → "3","2","1","HUNT"
 
 
 func _ready():
 	phase = Phase.INTRO
+	_intro_total = intro_seconds
 	_intro_left = intro_seconds
+	_last_countdown_step = -1
 	time_remaining = match_duration
 	match_elapsed = 0.0
 	print("ArenaManager: INTRO → fight in ", intro_seconds, "s · duration ", match_duration / 60.0, " min")
+
+
+## Call from MeleeTest after spawn so intro length sticks (export set after _ready is ignored otherwise).
+func configure_intro(seconds: float) -> void:
+	intro_seconds = maxf(0.5, seconds)
+	_intro_total = intro_seconds
+	_intro_left = intro_seconds
+	_last_countdown_step = -1
+
+
+func get_intro_remaining() -> float:
+	return maxf(0.0, _intro_left)
+
+
+func get_intro_progress() -> float:
+	if _intro_total <= 0.001:
+		return 1.0
+	return 1.0 - clampf(_intro_left / _intro_total, 0.0, 1.0)
 
 
 func _process(delta: float):
@@ -45,6 +68,7 @@ func _process(delta: float):
 
 	if phase == Phase.INTRO:
 		_intro_left -= delta
+		_emit_countdown_if_needed()
 		if _intro_left <= 0.0:
 			phase = Phase.FIGHT
 			phase_changed.emit(phase)
@@ -69,6 +93,28 @@ func _process(delta: float):
 
 func register_zone(zone: Node) -> void:
 	zone_system = zone
+
+
+func _emit_countdown_if_needed() -> void:
+	# Map remaining time to 3 / 2 / 1 / HUNT steps across the intro window.
+	var frac := 1.0 - clampf(_intro_left / maxf(0.001, _intro_total), 0.0, 1.0)
+	var step := 3
+	var label := "3"
+	if frac < 0.22:
+		step = 3
+		label = "3"
+	elif frac < 0.44:
+		step = 2
+		label = "2"
+	elif frac < 0.66:
+		step = 1
+		label = "1"
+	else:
+		step = 0
+		label = "HUNT"
+	if step != _last_countdown_step:
+		_last_countdown_step = step
+		intro_countdown.emit(step, label)
 
 
 func register_player(player) -> void:
@@ -156,15 +202,15 @@ func _finish(winner: Node) -> void:
 		return
 	phase = Phase.ENDED
 	phase_changed.emit(phase)
-	# Soft-freeze living fighters
+	# Hard freeze living fighters + stop zone damage spam
 	for p in players:
 		if p == null or not is_instance_valid(p):
 			continue
 		if p is CharacterBody3D:
 			(p as CharacterBody3D).velocity = Vector3.ZERO
-		if p != winner and p.has_method("set_physics_process"):
-			# Keep winner able to look; freeze defeated combat already handled
-			pass
+		p.set_physics_process(false)
+	if zone_system and zone_system.has_method("stop"):
+		zone_system.stop()
 	match_ended.emit(winner)
 	print("MATCH OVER — Winner:", winner.name if winner else "Draw", " reason=", _end_reason)
 

@@ -282,9 +282,10 @@ func equip_weapon(weapon: Weapon):
 
 	# Store weapon's knockback multiplier for use in hit reactions
 	base_knockback_multiplier = weapon.get_knockback_multiplier()
+	_sync_melee_hitbox_reach()
 
 	weapon_equipped.emit(weapon.weapon_name)
-	print(name, " equipped ", weapon.weapon_name)
+	print(name, " equipped ", weapon.weapon_name, " reach L/H=", _weapon_reach(false), "/", _weapon_reach(true))
 
 func unequip_weapon():
 	if current_weapon:
@@ -803,16 +804,49 @@ func _weapon_arc() -> float:
 	return 1.0
 
 
+func _weapon_reach(heavy: bool) -> float:
+	if current_weapon:
+		if heavy and current_weapon.has_method("get_heavy_reach"):
+			return current_weapon.get_heavy_reach()
+		if not heavy and current_weapon.has_method("get_light_reach"):
+			return current_weapon.get_light_reach()
+		if "heavy_reach" in current_weapon and heavy:
+			return float(current_weapon.heavy_reach)
+		if "light_reach" in current_weapon and not heavy:
+			return float(current_weapon.light_reach)
+	# Fallback legacy mul
+	return (1.65 if heavy else 1.35) * _weapon_range_mul()
+
+
+func _weapon_hit_radius(heavy: bool) -> float:
+	if current_weapon and current_weapon.has_method("get_hit_radius"):
+		return current_weapon.get_hit_radius(heavy)
+	var amul := _weapon_arc()
+	return (0.7 if heavy else 0.55) * clampf(amul, 0.5, 1.5)
+
+
+func _sync_melee_hitbox_reach() -> void:
+	if melee_hitbox == null:
+		return
+	var reach := _weapon_reach(false)
+	melee_hitbox.position = Vector3(0, 1.0, -reach * 0.82)
+	var hb_shape = melee_hitbox.get_node_or_null("CollisionShape3D")
+	if hb_shape and hb_shape.shape is CapsuleShape3D:
+		var cap := hb_shape.shape as CapsuleShape3D
+		var r := _weapon_hit_radius(false)
+		cap.radius = r
+		cap.height = maxf(0.9, reach * 0.55)
+
+
 func _melee_shape_query(heavy: bool) -> void:
 	var space := get_world_3d().direct_space_state
 	var q := PhysicsShapeQueryParameters3D.new()
 	var sphere := SphereShape3D.new()
-	var rmul := _weapon_range_mul()
 	var amul := _weapon_arc()
-	# Sword mid, axe shorter wider, dagger shorter tighter
-	sphere.radius = (0.7 if heavy else 0.55) * clampf(amul, 0.5, 1.5)
+	# Distinct tool feel: weapon absolute reach + arc-scaled radius
+	sphere.radius = _weapon_hit_radius(heavy) * clampf(amul, 0.75, 1.35)
 	q.shape = sphere
-	var reach := (1.65 if heavy else 1.35) * rmul
+	var reach := _weapon_reach(heavy)
 	q.transform = Transform3D(Basis(), global_position + Vector3(0, 1.0, 0) + (-global_transform.basis.z) * reach)
 	q.exclude = [get_rid()]
 	q.collision_mask = 0xFFFFFFFF
@@ -947,7 +981,7 @@ func _on_melee_hit(body):
 		return
 
 	_build_judgement_chain(is_judgement)
-	_apply_hit_feedback(is_heavy or is_judgement)
+	_apply_hit_feedback(is_heavy, is_judgement)
 	_spawn_hit_particles(body.global_position, is_heavy or is_judgement)
 	if _combat_audio:
 		_combat_audio.play_hit(is_heavy or is_judgement)
@@ -973,12 +1007,22 @@ func _spawn_kill_particles() -> void:
 	scene.add_child(particles_instance)
 	particles_instance.spawn_kill(global_position, Vector3.UP)
 
-func _apply_hit_feedback(is_heavy: bool):
-	# LOCAL hitstop (Culling-safe for 2P — no global Engine.time_scale)
-	local_hitstop = 0.09 if is_heavy else 0.05
+func _apply_hit_feedback(is_heavy: bool, is_judgement: bool = false):
+	# LOCAL hitstop (2P-safe — no global Engine.time_scale). Weightier on heavy/Judgement.
+	if is_judgement:
+		local_hitstop = 0.155
+	elif is_heavy:
+		local_hitstop = 0.125
+	else:
+		local_hitstop = 0.055
 	if camera_shake:
-		camera_shake.add_trauma(0.65 if is_heavy else 0.35)
-	print(name, " landed hit! (heavy=", is_heavy, ")")
+		var trauma := 0.38
+		if is_judgement:
+			trauma = 0.88
+		elif is_heavy:
+			trauma = 0.72
+		camera_shake.add_trauma(trauma)
+	print(name, " landed hit! (heavy=", is_heavy, " judgement=", is_judgement, ")")
 
 func take_damage(amount: int, attacker: Node):
 	# Dodge i-frames

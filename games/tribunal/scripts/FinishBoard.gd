@@ -59,9 +59,9 @@ func show_results(payload: Dictionary) -> void:
 		_rows.add_child(_make_stat_row(f))
 
 	if _has_replay:
-		_hint.text = "R  ·  REMATCH     G  ·  REPLAY     ESC  ·  MOUSE"
+		_hint.text = "R / Start / A  ·  REMATCH     G  ·  REPLAY     ESC  ·  MOUSE"
 	else:
-		_hint.text = "R  ·  REMATCH          ESC  ·  RELEASE MOUSE"
+		_hint.text = "R / Start / A  ·  REMATCH          ESC  ·  RELEASE MOUSE"
 	# Dim in
 	_dim.modulate.a = 0.0
 	_panel.modulate.a = 0.0
@@ -87,24 +87,39 @@ func set_replay_mode(on: bool) -> void:
 	if _dim:
 		_dim.modulate.a = 0.25 if on else 1.0
 	if _hint:
-		_hint.text = "REPLAY…  G skip · R rematch" if on else (
-			"R  ·  REMATCH     G  ·  REPLAY" if _has_replay else "R  ·  REMATCH"
+		_hint.text = "REPLAY…  G skip · R / Start rematch" if on else (
+			"R / Start / A  ·  REMATCH     G  ·  REPLAY" if _has_replay else "R / Start / A  ·  REMATCH"
 		)
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not _visible_board:
 		return
+	# Keyboard rematch / replay
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_R:
 			rematch_requested.emit()
 			get_viewport().set_input_as_handled()
+			return
 		elif event.keycode == KEY_G and (_has_replay or _replay_mode):
 			replay_requested.emit()
 			get_viewport().set_input_as_handled()
-		elif event.is_action_pressed("ui_accept") and _has_replay:
-			# Pad A also can start rematch; use Select-style via ui_focus_next? Keep R.
-			pass
+			return
+	# Pad-native: Start / A → rematch (console slice)
+	if event is InputEventJoypadButton and event.pressed:
+		var btn: int = event.button_index
+		if btn == JOY_BUTTON_START or btn == JOY_BUTTON_A:
+			rematch_requested.emit()
+			get_viewport().set_input_as_handled()
+			return
+		if btn == JOY_BUTTON_Y and (_has_replay or _replay_mode):
+			# Y as alternate replay on pad
+			replay_requested.emit()
+			get_viewport().set_input_as_handled()
+			return
+	if event.is_action_pressed("ui_accept"):
+		rematch_requested.emit()
+		get_viewport().set_input_as_handled()
 
 
 func _build() -> void:
@@ -149,15 +164,17 @@ func _build() -> void:
 	var brand := Label.new()
 	brand.text = "TRIBUNAL"
 	brand.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	brand.add_theme_font_size_override("font_size", 14)
-	brand.add_theme_color_override("font_color", Color(0.65, 0.65, 0.7))
+	brand.add_theme_font_size_override("font_size", 16)
+	brand.add_theme_color_override("font_color", GOLD)
+	brand.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	brand.add_theme_constant_override("outline_size", 3)
 	vbox.add_child(brand)
 
 	var ref_line := Label.new()
-	ref_line.text = "Melee bar: The Culling · Product: Tribunal"
+	ref_line.text = "ROUND RESULTS"
 	ref_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ref_line.add_theme_font_size_override("font_size", 11)
-	ref_line.add_theme_color_override("font_color", Color(0.45, 0.45, 0.5))
+	ref_line.add_theme_font_size_override("font_size", 12)
+	ref_line.add_theme_color_override("font_color", Color(0.55, 0.55, 0.6))
 	vbox.add_child(ref_line)
 
 	_title = Label.new()
@@ -189,7 +206,7 @@ func _build() -> void:
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hint.add_theme_font_size_override("font_size", 15)
 	_hint.add_theme_color_override("font_color", Color(0.9, 0.85, 0.55))
-	_hint.text = "R  ·  REMATCH"
+	_hint.text = "R / Start / A  ·  REMATCH"
 	vbox.add_child(_hint)
 
 

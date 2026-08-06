@@ -1,6 +1,6 @@
-# MeleeTestScene.gd — TRIBUNAL mirrors THE CULLING core loop.
+# MeleeTestScene.gd — Tribunal full-round spine (intro → fight → finish board).
 # Local 2P hotseat + weapons + hitstop + particles + PBR arena.
-# This is the only acceptable spine: PlayerController combat soul.
+# Combat soul lives in PlayerController.
 
 extends Node3D
 
@@ -24,8 +24,11 @@ const ReplaySystemScript = preload("res://scripts/ReplaySystem.gd")
 @export var spawn_spar_hunters: bool = true
 @export var spar_hunter_count: int = 2
 @export var enable_zone: bool = true
-@export var scav_loot_count: int = 10
+@export var scav_loot_count: int = 14
 @export var last_stand_mode: bool = true
+@export var intro_countdown_seconds: float = 3.4
+@export var hunter_wave2_delay: float = 45.0
+@export var hunter_early_refill_min: float = 12.0
 
 @onready var player1 = $Player1
 @onready var player2 = $Player2
@@ -44,8 +47,13 @@ var scavenging_system = null
 var tribunal_hud: CanvasLayer = null
 var finish_board = null
 var replay_system = null
+var hunter_spawner = null
 var _arena_info: Dictionary = {}
 var _round_frozen: bool = true  # intro freeze
+var _hunter_wave2_done: bool = false
+var _hunter_early_refill_done: bool = false
+var _fight_elapsed: float = 0.0
+var _match_ended_handled: bool = false
 
 func _ready():
 	print("=== TRIBUNAL — CONSOLE SLICE ===")
@@ -71,13 +79,13 @@ func _ready():
 	if enable_zone:
 		_init_zone()
 
-	# Intro freeze — complete playthrough starts with FIGHT banner then go
+	# Intro freeze — 3-2-1-HUNT countdown then go
 	_round_frozen = true
 	_set_fighters_frozen(true)
 	if arena_manager and arena_manager.has_signal("match_started"):
 		if not arena_manager.match_started.is_connected(_on_match_started):
 			arena_manager.match_started.connect(_on_match_started)
-	print("Tribunal round: INTRO → fight → finish board")
+	print("Tribunal round: INTRO countdown → fight → finish board")
 
 
 func _setup_fighters() -> void:
@@ -174,8 +182,13 @@ func _set_fighters_frozen(frozen: bool) -> void:
 
 func _on_match_started() -> void:
 	_set_fighters_frozen(false)
+	_fight_elapsed = 0.0
+	if zone_system and zone_system.has_method("start"):
+		zone_system.start()
 	if replay_system and replay_system.has_method("start_recording"):
 		replay_system.start_recording()
+	if tribunal_hud and tribunal_hud.has_method("show_countdown"):
+		tribunal_hud.show_countdown("HUNT")
 	print("ROUND LIVE · recording replay · Judgement Chain live")
 
 
@@ -211,8 +224,11 @@ func _configure_match_stakes() -> void:
 	arena_manager.test_mode_respawn = not last_stand_mode
 	arena_manager.match_duration = 300.0
 	arena_manager.time_remaining = 300.0
-	arena_manager.intro_seconds = 1.6
-	print("MeleeTest: stakes last_stand=", last_stand_mode, " duration=5:00")
+	if arena_manager.has_method("configure_intro"):
+		arena_manager.configure_intro(intro_countdown_seconds)
+	else:
+		arena_manager.intro_seconds = intro_countdown_seconds
+	print("MeleeTest: stakes last_stand=", last_stand_mode, " duration=5:00 intro=", intro_countdown_seconds)
 
 
 func _setup_scavenge_and_traps() -> void:
@@ -235,8 +251,14 @@ func _setup_scavenge_and_traps() -> void:
 
 	if not scavenging_system.loot_collected.is_connected(_on_loot_collected):
 		scavenging_system.loot_collected.connect(_on_loot_collected)
+	if scavenging_system.has_signal("channel_cancelled") and not scavenging_system.channel_cancelled.is_connected(_on_scav_channel_cancelled):
+		scavenging_system.channel_cancelled.connect(_on_scav_channel_cancelled)
+	if scavenging_system.has_signal("channel_progress") and not scavenging_system.channel_progress.is_connected(_on_scav_channel_progress):
+		scavenging_system.channel_progress.connect(_on_scav_channel_progress)
 	if not trap_system.trap_triggered.is_connected(_on_trap_triggered):
 		trap_system.trap_triggered.connect(_on_trap_triggered)
+	if trap_system.has_signal("trap_placed") and not trap_system.trap_placed.is_connected(_on_trap_placed):
+		trap_system.trap_placed.connect(_on_trap_placed)
 	if scavenging_system.has_signal("channel_started") and not scavenging_system.channel_started.is_connected(_on_scav_channel_started):
 		scavenging_system.channel_started.connect(_on_scav_channel_started)
 
@@ -246,7 +268,7 @@ func _setup_scavenge_and_traps() -> void:
 	else:
 		scavenging_system.arena_half_extent = float(_arena_info.get("half", 9.0)) - 2.0
 		scavenging_system.spawn_loot_in_arena(self, scav_loot_count)
-	print("MeleeTest: scav+traps on finished arena")
+	print("MeleeTest: scav+traps denser caches=", scav_loot_count)
 
 
 func try_scavenge_for(player: PlayerController) -> void:
@@ -257,6 +279,20 @@ func try_scavenge_for(player: PlayerController) -> void:
 func _on_scav_channel_started(player: Node, _loot: Area3D) -> void:
 	if tribunal_hud and tribunal_hud.has_method("push_feed"):
 		tribunal_hud.push_feed("%s scavenging…" % player.name)
+	if tribunal_hud and tribunal_hud.has_method("set_scavenge_progress"):
+		tribunal_hud.set_scavenge_progress(player, 0.0)
+
+
+func _on_scav_channel_progress(player: Node, progress: float) -> void:
+	if tribunal_hud and tribunal_hud.has_method("set_scavenge_progress"):
+		tribunal_hud.set_scavenge_progress(player, progress)
+
+
+func _on_scav_channel_cancelled(player: Node) -> void:
+	if tribunal_hud and tribunal_hud.has_method("clear_scavenge_progress"):
+		tribunal_hud.clear_scavenge_progress()
+	if tribunal_hud and tribunal_hud.has_method("push_feed") and player:
+		tribunal_hud.push_feed("%s · scavenge cancelled" % player.name)
 
 
 func _on_loot_collected(item: Dictionary, player: Node) -> void:
@@ -264,15 +300,52 @@ func _on_loot_collected(item: Dictionary, player: Node) -> void:
 	print("MeleeTest scav: ", player.name if player else "?", " got ", label)
 	if arena_manager and arena_manager.has_method("record_scavenge"):
 		arena_manager.record_scavenge(player)
+	if tribunal_hud and tribunal_hud.has_method("clear_scavenge_progress"):
+		tribunal_hud.clear_scavenge_progress()
 	if tribunal_hud and tribunal_hud.has_method("push_feed"):
 		tribunal_hud.push_feed("%s · %s" % [player.name, label])
 
 
 func _on_trap_triggered(trap_type: String, victim: Node) -> void:
 	print("MeleeTest trap: ", trap_type, " hit ", victim.name if victim else "?")
-	# Credit trap owner if recorded on trap meta — TrapSystem emits type+victim only
 	if tribunal_hud and tribunal_hud.has_method("push_feed"):
-		tribunal_hud.push_feed("TRAP · %s" % trap_type)
+		var vname: String = str(victim.name) if victim else "?"
+		tribunal_hud.push_feed("TRAP · %s snared %s" % [trap_type, vname])
+
+
+func _on_trap_placed(trap_type: String, player: Node, position: Vector3) -> void:
+	print("MeleeTest trap placed: ", trap_type, " by ", player.name if player else "?", " @ ", position)
+	if tribunal_hud and tribunal_hud.has_method("push_feed") and player:
+		var kits := 0
+		if trap_system and trap_system.has_method("get_trap_kits"):
+			kits = trap_system.get_trap_kits(player)
+		tribunal_hud.push_feed("%s · trap set (%d left)" % [player.name, kits])
+	# Brief world marker flash at place point
+	_flash_trap_place_marker(position)
+
+
+func _flash_trap_place_marker(pos: Vector3) -> void:
+	var mi := MeshInstance3D.new()
+	mi.name = "TrapPlaceFlash"
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.55
+	cyl.bottom_radius = 0.7
+	cyl.height = 0.06
+	mi.mesh = cyl
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(1.0, 0.55, 0.12, 0.85)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.emission_enabled = true
+	mat.emission = Color(1.0, 0.45, 0.08)
+	mat.emission_energy_multiplier = 2.8
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mi.material_override = mat
+	add_child(mi)
+	mi.global_position = pos + Vector3(0, 0.05, 0)
+	var tw := create_tween()
+	tw.tween_property(mi, "scale", Vector3(1.6, 1.0, 1.6), 0.18)
+	tw.parallel().tween_property(mat, "emission_energy_multiplier", 0.0, 0.35)
+	tw.tween_callback(mi.queue_free)
 
 
 func place_trap_for(player: PlayerController, trap_type: String = "bear_trap") -> void:
@@ -294,13 +367,14 @@ func _init_zone() -> void:
 	zone_system.shrink_duration = 180.0
 	zone_system.damage_per_tick = 4
 	zone_system.damage_interval = 0.5
-	zone_system.auto_start = true
+	# Start on match go (not during countdown freeze)
+	zone_system.auto_start = false
 	zone_system.danger_tint_enabled = true
 	zone_system.ring_y = 0.12
 	add_child(zone_system)
 	if arena_manager and arena_manager.has_method("register_zone"):
 		arena_manager.register_zone(zone_system)
-	print("MeleeTest: zone fits finished arena r0=", zone_system.start_radius)
+	print("MeleeTest: zone armed (starts on HUNT) r0=", zone_system.start_radius)
 
 
 func _apply_culling_environment() -> void:
@@ -346,6 +420,7 @@ func _spawn_spar_hunters(count: int) -> void:
 		spawner = HunterSpawnerScript.new()
 		spawner.name = "HunterSpawner"
 		add_child(spawner)
+	hunter_spawner = spawner
 	if player1 and spawner.has_method("set_player_target"):
 		spawner.set_player_target(player1)
 	elif player1 and "player_target" in spawner:
@@ -354,18 +429,47 @@ func _spawn_spar_hunters(count: int) -> void:
 		var wave = spawner.spawn_wave(count)
 		_wire_hunter_kills(wave)
 		print("MeleeTest: hunters wave1=", wave.size())
-		get_tree().create_timer(45.0).timeout.connect(func ():
-			if not is_instance_valid(spawner):
-				return
-			if arena_manager and "phase" in arena_manager and int(arena_manager.phase) == 2:
-				return  # ENDED
-			var alive := int(spawner.alive_count()) if spawner.has_method("alive_count") else 0
-			var n := 3 if alive == 0 else 2
-			var w2 = spawner.spawn_wave(n)
-			_wire_hunter_kills(w2)
-			print("MeleeTest: hunters wave2=", w2.size())
+		# Timed wave 2 (always) — denser if field is empty
+		get_tree().create_timer(hunter_wave2_delay).timeout.connect(func ():
+			_try_hunter_wave2(false)
 		)
 		return
+
+
+func _try_hunter_wave2(early: bool) -> void:
+	if _hunter_wave2_done and not early:
+		return
+	if early and _hunter_early_refill_done:
+		return
+	if hunter_spawner == null or not is_instance_valid(hunter_spawner):
+		return
+	if arena_manager and "phase" in arena_manager:
+		var ph := int(arena_manager.phase)
+		if ph == 0:  # INTRO
+			return
+		if ph == 2:  # ENDED
+			return
+	if _round_frozen or _match_ended_handled:
+		return
+	var alive := int(hunter_spawner.alive_count()) if hunter_spawner.has_method("alive_count") else 0
+	if early:
+		if alive > 0:
+			return
+		_hunter_early_refill_done = true
+		var w_early = hunter_spawner.spawn_wave(2)
+		_wire_hunter_kills(w_early)
+		if tribunal_hud and tribunal_hud.has_method("push_feed"):
+			tribunal_hud.push_feed("HUNTERS · pressure rising")
+		print("MeleeTest: hunters early refill=", w_early.size())
+		return
+	# Scheduled wave 2
+	_hunter_wave2_done = true
+	var n := 3 if alive == 0 else 2
+	var w2 = hunter_spawner.spawn_wave(n)
+	_wire_hunter_kills(w2)
+	if tribunal_hud and tribunal_hud.has_method("push_feed"):
+		tribunal_hud.push_feed("HUNTERS · wave 2")
+	print("MeleeTest: hunters wave2=", w2.size(), " (alive_before=", alive, ")")
 
 
 func _wire_hunter_kills(hunters: Array) -> void:
@@ -374,17 +478,28 @@ func _wire_hunter_kills(hunters: Array) -> void:
 			continue
 		if h.has_signal("died_by") and not h.died_by.is_connected(_on_hunter_killed):
 			h.died_by.connect(_on_hunter_killed)
+		# Fallback if killer null: still feed on died
+		if h.has_signal("died") and not h.died.is_connected(_on_hunter_died_anon.bind(h)):
+			h.died.connect(_on_hunter_died_anon.bind(h))
 
 
 func _on_hunter_killed(killer: Node) -> void:
 	if arena_manager and arena_manager.has_method("record_kill") and killer:
 		arena_manager.record_kill(killer)
-	if tribunal_hud and tribunal_hud.has_method("push_feed") and killer:
-		tribunal_hud.push_feed("%s · hunter down" % killer.name)
+	if tribunal_hud and tribunal_hud.has_method("push_feed"):
+		if killer and is_instance_valid(killer):
+			tribunal_hud.push_feed("%s · hunter down" % killer.name)
+		else:
+			tribunal_hud.push_feed("HUNTER · eliminated")
+
+
+func _on_hunter_died_anon(_hunter: Node) -> void:
+	# Ensure feed if died_by had null killer (environmental / trap without credit path)
+	pass
 
 
 func _setup_ui():
-	# Culling-readable TribunalHUD owns vitals / timer / feed / banners.
+	# TribunalHUD owns vitals / timer / feed / banners.
 	# Legacy labels stay in the tree but are hidden so nothing softlocks.
 	if not has_node("TribunalHUD"):
 		tribunal_hud = TribunalHUDScript.new()
@@ -400,8 +515,8 @@ func _setup_ui():
 
 	if ui_layer:
 		if instructions_label:
-			instructions_label.text = """P1: stick/WASD · pad look · X/Y light heavy · LB block · RB shove · B dodge · A scavenge
-Judgement Chain: land hits → JUDGEMENT heavy · G replay after match · R rematch"""
+			instructions_label.text = """TRIBUNAL  ·  P1: stick/WASD · RS look · X/Y light/heavy · LB block · RB shove · B dodge · A scavenge · RS-click trap
+Judgement Chain: land hits → JUDGEMENT heavy  ·  R rematch  ·  G replay"""
 			instructions_label.offset_left = 16
 			instructions_label.offset_top = 640
 			instructions_label.offset_right = 980
@@ -431,8 +546,24 @@ Judgement Chain: land hits → JUDGEMENT heavy · G replay after match · R rema
 			tribunal_hud.set_weapon_name(2, "Axe")
 
 
-func _process(_delta):
+func _process(delta):
 	_update_status()
+	_tick_hunter_pressure(delta)
+
+
+func _tick_hunter_pressure(delta: float) -> void:
+	if _match_ended_handled or _round_frozen:
+		return
+	if arena_manager and "phase" in arena_manager and int(arena_manager.phase) != 1:
+		return
+	_fight_elapsed += delta
+	# Early refill when the field is cleared before the timed wave
+	if not _hunter_early_refill_done and not _hunter_wave2_done \
+			and _fight_elapsed >= hunter_early_refill_min \
+			and hunter_spawner and is_instance_valid(hunter_spawner) \
+			and hunter_spawner.has_method("alive_count") \
+			and int(hunter_spawner.alive_count()) == 0:
+		_try_hunter_wave2(true)
 
 
 func _update_status():
@@ -479,7 +610,7 @@ func _sync_weapon_visual(player, wtype: int):
 
 
 func _on_player_died(player):
-	print(player.name, " eliminated (Culling rules)")
+	print(player.name, " eliminated (last stand)")
 	if player == null or not is_instance_valid(player):
 		return
 	var pos: Vector3 = player.global_position
@@ -491,7 +622,7 @@ func _on_player_died(player):
 		var sid := str(player.character_skin_id)
 		if skins.has(sid):
 			col = skins[sid]["body"]
-	# Death mark + scav loot drop (Culling fallen-hunter props)
+	# Death mark + contested scav drop
 	PropSkinUtil.spawn_death_mark(self, pos, col)
 	if scavenging_system:
 		scavenging_system.spawn_loot_at(self, pos + Vector3(0.4, 0.0, 0.2))
@@ -502,22 +633,38 @@ func _on_player_died(player):
 
 
 func _on_match_ended(winner):
+	if _match_ended_handled:
+		return
+	_match_ended_handled = true
 	print("MATCH ENDED — Winner:", winner.name if winner else "Draw")
 	_set_fighters_frozen(true)
+	_freeze_hunters()
 	if replay_system and replay_system.has_method("stop_recording"):
 		replay_system.stop_recording()
 	# Stop zone damage spam
 	if zone_system and zone_system.has_method("stop"):
 		zone_system.stop()
-	# Full finish board
+	if tribunal_hud and tribunal_hud.has_method("clear_scavenge_progress"):
+		tribunal_hud.clear_scavenge_progress()
+	# Full finish board always
 	if finish_board and arena_manager and arena_manager.has_method("build_results_payload"):
 		var payload: Dictionary = arena_manager.build_results_payload(winner)
 		payload["has_replay"] = replay_system != null and replay_system.has_replay()
 		finish_board.show_results(payload)
-	elif tribunal_hud and tribunal_hud.has_method("show_winner_banner"):
+	if tribunal_hud and tribunal_hud.has_method("show_winner_banner"):
 		tribunal_hud.show_winner_banner(winner)
 	if instructions_label:
-		instructions_label.text = "ROUND OVER — R rematch · G replay"
+		instructions_label.text = "TRIBUNAL · ROUND OVER — R / Start rematch · A rematch · G replay"
+
+
+func _freeze_hunters() -> void:
+	for h in get_tree().get_nodes_in_group("hunters"):
+		if h == null or not is_instance_valid(h):
+			continue
+		if h is CharacterBody3D:
+			(h as CharacterBody3D).velocity = Vector3.ZERO
+		h.set_physics_process(false)
+		h.set_process(false)
 
 
 func _unhandled_input(event: InputEvent) -> void:

@@ -193,6 +193,7 @@ static func _add_ambient_trim(parent: Node3D, stone: Material) -> void:
 
 
 static func _loot_points() -> Array:
+	# Denser contested caches — cover-adjacent + mid lanes
 	return [
 		Vector3(0, FLOOR_Y + 0.35, 5.5),
 		Vector3(0, FLOOR_Y + 0.35, -5.5),
@@ -204,6 +205,10 @@ static func _loot_points() -> Array:
 		Vector3(-7.0, FLOOR_Y + 0.35, 7.0),
 		Vector3(4.0, FLOOR_Y + 0.35, -4.0),
 		Vector3(-4.0, FLOOR_Y + 0.35, 4.0),
+		Vector3(3.2, FLOOR_Y + 0.35, 6.2),
+		Vector3(-3.2, FLOOR_Y + 0.35, -6.2),
+		Vector3(6.2, FLOOR_Y + 0.35, 3.0),
+		Vector3(-6.2, FLOOR_Y + 0.35, -3.0),
 	]
 
 

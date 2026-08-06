@@ -185,41 +185,74 @@ func _apply_playback() -> void:
 func _make_ghost(nm: String) -> Node3D:
 	var root := Node3D.new()
 	root.name = "ReplayGhost_%s" % nm
-	var body := MeshInstance3D.new()
-	var cap := CapsuleMesh.new()
-	cap.radius = 0.35
-	cap.height = 1.1
-	body.mesh = cap
-	body.position.y = 1.0
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.55, 0.75, 1.0, 0.45)
+	mat.albedo_color = Color(0.45, 0.7, 1.0, 0.55)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.emission_enabled = true
-	mat.emission = Color(0.3, 0.6, 1.0)
-	mat.emission_energy_multiplier = 1.2
-	body.material_override = mat
-	root.add_child(body)
+	mat.emission = Color(0.25, 0.55, 1.0)
+	mat.emission_energy_multiplier = 1.6
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Readable humanoid silhouette (not a single capsule blob)
+	var torso := MeshInstance3D.new()
+	torso.name = "Torso"
+	var body_mesh := CapsuleMesh.new()
+	body_mesh.radius = 0.28
+	body_mesh.height = 0.85
+	torso.mesh = body_mesh
+	torso.position.y = 1.05
+	torso.material_override = mat
+	root.add_child(torso)
 	var head := MeshInstance3D.new()
+	head.name = "Head"
 	var sph := SphereMesh.new()
-	sph.radius = 0.2
+	sph.radius = 0.18
+	sph.height = 0.36
 	head.mesh = sph
-	head.position.y = 1.75
-	head.material_override = mat
+	head.position.y = 1.72
+	head.material_override = mat.duplicate()
 	root.add_child(head)
+	# Shoulders / width cue
+	var shoulders := MeshInstance3D.new()
+	shoulders.name = "Shoulders"
+	var box := BoxMesh.new()
+	box.size = Vector3(0.72, 0.16, 0.28)
+	shoulders.mesh = box
+	shoulders.position.y = 1.38
+	shoulders.material_override = mat.duplicate()
+	root.add_child(shoulders)
+	# Soft ground shadow disc for depth read
+	var shadow := MeshInstance3D.new()
+	shadow.name = "Shadow"
+	var disc := CylinderMesh.new()
+	disc.top_radius = 0.38
+	disc.bottom_radius = 0.38
+	disc.height = 0.04
+	shadow.mesh = disc
+	shadow.position.y = 0.03
+	var smat := StandardMaterial3D.new()
+	smat.albedo_color = Color(0.05, 0.08, 0.15, 0.4)
+	smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	shadow.material_override = smat
+	root.add_child(shadow)
 	return root
 
 
 func _tint_ghost(node: Node3D, chain: int) -> void:
-	var col := Color(0.55, 0.75, 1.0, 0.45)
+	var col := Color(0.45, 0.7, 1.0, 0.55)
 	if chain >= 3:
-		col = Color(1.0, 0.82, 0.25, 0.55)
+		col = Color(1.0, 0.82, 0.25, 0.62)
 	elif chain >= 1:
-		col = Color(0.85, 0.55, 1.0, 0.5)
+		col = Color(0.85, 0.55, 1.0, 0.58)
 	for c in node.get_children():
+		if c.name == "Shadow":
+			continue
 		if c is MeshInstance3D and (c as MeshInstance3D).material_override is StandardMaterial3D:
 			var m: StandardMaterial3D = (c as MeshInstance3D).material_override
 			m.albedo_color = col
-			m.emission = col
+			m.emission = Color(col.r, col.g, col.b)
+			m.emission_energy_multiplier = 2.1 if chain >= 3 else 1.6
 
 
 func _clear_ghosts() -> void:
