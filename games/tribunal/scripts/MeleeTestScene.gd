@@ -13,7 +13,8 @@ const ZoneSystemScript = preload("res://scripts/ZoneSystem.gd")
 const TribunalHUDScript = preload("res://scripts/TribunalHUD.gd")
 const ScavengingSystemScript = preload("res://scripts/ScavengingSystem.gd")
 const TrapSystemScript = preload("res://scripts/TrapSystem.gd")
-const ArenaCoverUtil = preload("res://scripts/ArenaCover.gd")
+const ArenaEnvUtil = preload("res://scripts/ArenaEnvironment.gd")
+const FinishBoardScript = preload("res://scripts/FinishBoard.gd")
 
 @export var use_hotseat: bool = true
 @export var capture_mouse_on_start: bool = true
@@ -21,8 +22,7 @@ const ArenaCoverUtil = preload("res://scripts/ArenaCover.gd")
 @export var spar_hunter_count: int = 2
 @export var enable_zone: bool = true
 @export var scav_loot_count: int = 10
-@export var dense_cover: bool = true
-@export var last_stand_mode: bool = true  # no endless respawn — Culling stakes
+@export var last_stand_mode: bool = true
 
 @onready var player1 = $Player1
 @onready var player2 = $Player2
@@ -36,26 +36,45 @@ const ArenaCoverUtil = preload("res://scripts/ArenaCover.gd")
 @onready var camera: Camera3D = $Camera3D
 var follow_camera = null
 var zone_system = null
-# Wired by W1 scavenge/traps when present; null-safe for headless smoke
 var trap_system = null
 var scavenging_system = null
 var tribunal_hud: CanvasLayer = null
+var finish_board = null
+var _arena_info: Dictionary = {}
+var _round_frozen: bool = true  # intro freeze
 
 func _ready():
-	print("=== TRIBUNAL — CULLING MELEE CORE ===")
-	print("Mirror of The Culling: weighty melee, 2P hotseat, weapons, scav/trap ready.")
+	print("=== TRIBUNAL — FINISHED ROUND ===")
 	if capture_mouse_on_start:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 	_apply_culling_environment()
-	_apply_pbr_to_arena()
-	_apply_prop_skins()
-	if dense_cover:
-		ArenaCoverUtil.spawn_dense_cover(self)
-		_apply_prop_skins()  # re-skin any MeshInstance3D props that match names; dense cover uses materials already
+	# Coherent finished courtyard (floor, walls, designed cover, spawn pads)
+	_arena_info = ArenaEnvUtil.build(self)
+
 	_setup_scavenge_and_traps()
 	_configure_match_stakes()
+	_setup_fighters()
+	_place_fighters_on_pads()
+	_setup_camera()
+	_setup_ui()
+	_setup_finish_board()
 
+	if spawn_spar_hunters:
+		_spawn_spar_hunters(spar_hunter_count)
+	if enable_zone:
+		_init_zone()
+
+	# Intro freeze — complete playthrough starts with FIGHT banner then go
+	_round_frozen = true
+	_set_fighters_frozen(true)
+	if arena_manager and arena_manager.has_signal("match_started"):
+		if not arena_manager.match_started.is_connected(_on_match_started):
+			arena_manager.match_started.connect(_on_match_started)
+	print("Tribunal round: INTRO → fight → finish board")
+
+
+func _setup_fighters() -> void:
 	if player1:
 		player1.player_id = 1
 		var w1 = Weapon.new()
@@ -68,7 +87,8 @@ func _ready():
 		if not player1.weapon_equipped.is_connected(_on_weapon_equipped.bind(player1, p1_weapon_label)):
 			player1.weapon_equipped.connect(_on_weapon_equipped.bind(player1, p1_weapon_label))
 		_sync_weapon_visual(player1, 1)
-		player1.player_died.connect(_on_player_died.bind(player1))
+		if not player1.player_died.is_connected(_on_player_died.bind(player1)):
+			player1.player_died.connect(_on_player_died.bind(player1))
 	if player2:
 		player2.player_id = 2
 		var w2 = Weapon.new()
@@ -81,7 +101,8 @@ func _ready():
 		if not player2.weapon_equipped.is_connected(_on_weapon_equipped.bind(player2, p2_weapon_label)):
 			player2.weapon_equipped.connect(_on_weapon_equipped.bind(player2, p2_weapon_label))
 		_sync_weapon_visual(player2, 2)
-		player2.player_died.connect(_on_player_died.bind(player2))
+		if not player2.player_died.is_connected(_on_player_died.bind(player2)):
+			player2.player_died.connect(_on_player_died.bind(player2))
 
 	if arena_manager:
 		if player1:
@@ -91,9 +112,17 @@ func _ready():
 		if not arena_manager.match_ended.is_connected(_on_match_ended):
 			arena_manager.match_ended.connect(_on_match_ended)
 
+
+func _place_fighters_on_pads() -> void:
+	if player1 and _arena_info.has("spawn_p1"):
+		player1.global_position = _arena_info["spawn_p1"]
+	if player2 and _arena_info.has("spawn_p2"):
+		player2.global_position = _arena_info["spawn_p2"]
+
+
+func _setup_camera() -> void:
 	if camera:
 		camera.current = true
-		# Disable embedded player cameras so arena FollowCamera owns framing
 		for p in [player1, player2]:
 			if p and p.has_node("Camera3D"):
 				(p.get_node("Camera3D") as Camera3D).current = false
@@ -102,43 +131,54 @@ func _ready():
 		follow_camera.add_to_group("follow_cameras")
 		follow_camera.is_follow_mode = true
 		follow_camera.start_in_follow = true
+		follow_camera.follow_distance = 9.0
+		follow_camera.follow_height = 5.5
 		if follow_camera and player1:
 			follow_camera.set_target(player1)
-			# Re-bind player combat audio/camera after tree is ready
 			if player1.has_method("_resolve_follow_camera"):
 				player1._resolve_follow_camera()
 			if player2 and player2.has_method("_resolve_follow_camera"):
 				player2._resolve_follow_camera()
 
-	if spawn_spar_hunters:
-		_spawn_spar_hunters(spar_hunter_count)
 
-	if enable_zone:
-		_init_zone()
+func _setup_finish_board() -> void:
+	finish_board = FinishBoardScript.new()
+	finish_board.name = "FinishBoard"
+	add_child(finish_board)
+	if finish_board.has_signal("rematch_requested"):
+		finish_board.rematch_requested.connect(_on_rematch)
 
-	_setup_ui()
-	print("Fight. Mirror Culling. Prove the loop.")
+
+func _set_fighters_frozen(frozen: bool) -> void:
+	_round_frozen = frozen
+	for p in [player1, player2]:
+		if p == null or not is_instance_valid(p):
+			continue
+		p.set_physics_process(not frozen)
+		if frozen and p is CharacterBody3D:
+			(p as CharacterBody3D).velocity = Vector3.ZERO
+
+
+func _on_match_started() -> void:
+	_set_fighters_frozen(false)
+	print("ROUND LIVE")
+
+
+func _on_rematch() -> void:
+	get_tree().reload_current_scene()
 
 
 func _configure_match_stakes() -> void:
 	if arena_manager == null:
 		return
-	# Last-stand: elim is permanent (Culling stakes). Toggle last_stand_mode=false for spar training.
-	if last_stand_mode:
-		arena_manager.test_mode_respawn = false
-		if "match_duration" in arena_manager:
-			# 5 min micro-match is enough pressure with zone
-			if float(arena_manager.match_duration) > 400.0:
-				arena_manager.match_duration = 300.0
-				arena_manager.time_remaining = 300.0
-		print("MeleeTest: LAST STAND — no respawn (R to restart match)")
-	else:
-		arena_manager.test_mode_respawn = true
-		print("MeleeTest: spar training respawn ON")
+	arena_manager.test_mode_respawn = not last_stand_mode
+	arena_manager.match_duration = 300.0
+	arena_manager.time_remaining = 300.0
+	arena_manager.intro_seconds = 1.6
+	print("MeleeTest: stakes last_stand=", last_stand_mode, " duration=5:00")
 
 
 func _setup_scavenge_and_traps() -> void:
-	# Live Culling loop: contested E-channel scavenge + placeable traps
 	scavenging_system = get_node_or_null("ScavengingSystem") as ScavengingSystem
 	if scavenging_system == null:
 		scavenging_system = ScavengingSystemScript.new()
@@ -163,8 +203,13 @@ func _setup_scavenge_and_traps() -> void:
 	if scavenging_system.has_signal("channel_started") and not scavenging_system.channel_started.is_connected(_on_scav_channel_started):
 		scavenging_system.channel_started.connect(_on_scav_channel_started)
 
-	scavenging_system.spawn_loot_in_arena(self, scav_loot_count)
-	print("MeleeTest: ScavengingSystem + TrapSystem live (loot=%d, E/H channel)" % scav_loot_count)
+	var points: Array = _arena_info.get("loot_points", [])
+	if points.size() > 0 and scavenging_system.has_method("spawn_loot_at_points"):
+		scavenging_system.spawn_loot_at_points(self, points, scav_loot_count)
+	else:
+		scavenging_system.arena_half_extent = float(_arena_info.get("half", 9.0)) - 2.0
+		scavenging_system.spawn_loot_in_arena(self, scav_loot_count)
+	print("MeleeTest: scav+traps on finished arena")
 
 
 func try_scavenge_for(player: PlayerController) -> void:
@@ -179,35 +224,46 @@ func _on_scav_channel_started(player: Node, _loot: Area3D) -> void:
 
 func _on_loot_collected(item: Dictionary, player: Node) -> void:
 	var label := str(item.get("name", item.get("id", "loot")))
-	var applied := str(item.get("applied", ""))
-	print("MeleeTest scav: ", player.name if player else "?", " got ", label, " (", applied, ")")
+	print("MeleeTest scav: ", player.name if player else "?", " got ", label)
+	if arena_manager and arena_manager.has_method("record_scavenge"):
+		arena_manager.record_scavenge(player)
+	if tribunal_hud and tribunal_hud.has_method("push_feed"):
+		tribunal_hud.push_feed("%s · %s" % [player.name, label])
 
 
 func _on_trap_triggered(trap_type: String, victim: Node) -> void:
 	print("MeleeTest trap: ", trap_type, " hit ", victim.name if victim else "?")
+	# Credit trap owner if recorded on trap meta — TrapSystem emits type+victim only
+	if tribunal_hud and tribunal_hud.has_method("push_feed"):
+		tribunal_hud.push_feed("TRAP · %s" % trap_type)
 
 
 func place_trap_for(player: PlayerController, trap_type: String = "bear_trap") -> void:
 	if trap_system == null or player == null:
 		return
-	trap_system.place_trap(player, trap_type)
+	if trap_system.place_trap(player, trap_type):
+		if arena_manager and arena_manager.has_method("record_trap"):
+			arena_manager.record_trap(player)
 
 
 func _init_zone() -> void:
+	var half := float(_arena_info.get("half", 12.0))
 	zone_system = ZoneSystemScript.new()
 	zone_system.name = "ZoneSystem"
 	zone_system.center = Vector3.ZERO
-	zone_system.start_radius = 22.0
-	zone_system.min_radius = 4.0
+	# Start just outside walls, shrink into courtyard
+	zone_system.start_radius = half + 4.0
+	zone_system.min_radius = 3.5
 	zone_system.shrink_duration = 180.0
 	zone_system.damage_per_tick = 4
 	zone_system.damage_interval = 0.5
 	zone_system.auto_start = true
 	zone_system.danger_tint_enabled = true
+	zone_system.ring_y = 0.12
 	add_child(zone_system)
 	if arena_manager and arena_manager.has_method("register_zone"):
 		arena_manager.register_zone(zone_system)
-	print("MeleeTest: ZoneSystem active (Culling closing ring)")
+	print("MeleeTest: zone fits finished arena r0=", zone_system.start_radius)
 
 
 func _apply_culling_environment() -> void:
@@ -246,31 +302,6 @@ func _apply_culling_environment() -> void:
 		add_child(we)
 
 
-func _apply_pbr_to_arena() -> void:
-	var ground = get_node_or_null("Ground/MeshInstance3D")
-	if ground and ground is MeshInstance3D:
-		var mat = MatFactory.load_pbr("aerial_rocks_02")
-		mat.uv1_scale = Vector3(6, 6, 6)
-		(ground as MeshInstance3D).material_override = mat
-	# Scale ground mesh if tiny unit box
-	if ground and ground is MeshInstance3D:
-		(ground as MeshInstance3D).scale = Vector3(20, 1, 20)
-		(ground as MeshInstance3D).position.y = -0.5
-
-
-func _apply_prop_skins() -> void:
-	# First-class prop skins for arena cover (crate wood / iron barrel)
-	for n in ["Crate1", "Crate2"]:
-		var crate = get_node_or_null(n)
-		if crate and crate is Node3D:
-			PropSkinUtil.reskin_static_prop(crate as Node3D, Catalog.PSKIN_CRATE_WOOD)
-	for n in ["Barrel1", "Barrel2"]:
-		var barrel = get_node_or_null(n)
-		if barrel and barrel is Node3D:
-			PropSkinUtil.reskin_static_prop(barrel as Node3D, Catalog.PSKIN_BARREL_METAL)
-	print("MeleeTest: prop skins applied (crate_wood / barrel_metal)")
-
-
 func _spawn_spar_hunters(count: int) -> void:
 	# Prefer HunterSpawner (roles round-robin + catalog skins). Create if missing.
 	var spawner = get_node_or_null("HunterSpawner")
@@ -284,37 +315,35 @@ func _spawn_spar_hunters(count: int) -> void:
 		spawner.player_target = player1
 	if spawner.has_method("spawn_wave"):
 		var wave = spawner.spawn_wave(count)
-		print("MeleeTest: spar hunters via HunterSpawner count=", wave.size())
-		# Critic residual: second wave so pressure doesn't collapse after first spar dies
+		_wire_hunter_kills(wave)
+		print("MeleeTest: hunters wave1=", wave.size())
 		get_tree().create_timer(45.0).timeout.connect(func ():
 			if not is_instance_valid(spawner):
 				return
-			var alive := 0
-			if spawner.has_method("alive_count"):
-				alive = int(spawner.alive_count())
+			if arena_manager and "phase" in arena_manager and int(arena_manager.phase) == 2:
+				return  # ENDED
+			var alive := int(spawner.alive_count()) if spawner.has_method("alive_count") else 0
 			var n := 3 if alive == 0 else 2
 			var w2 = spawner.spawn_wave(n)
-			print("MeleeTest: hunter wave 2 count=", w2.size(), " prior_alive=", alive)
+			_wire_hunter_kills(w2)
+			print("MeleeTest: hunters wave2=", w2.size())
 		)
 		return
-	# Legacy fallback (should not hit if HunterSpawner present)
-	var offsets := [
-		Vector3(6, 1.2, -4),
-		Vector3(-6, 1.2, -5),
-		Vector3(0, 1.2, 8),
-		Vector3(8, 1.2, 3),
-	]
-	var skin_ids: Array = Catalog.character_skins().keys()
-	for i in count:
-		var h = HunterScript.new()
-		h.position = offsets[i % offsets.size()]
-		h.skin_id = str(skin_ids[i % skin_ids.size()])
-		h.weapon_type = 1 + (i % 3)
-		h.weapon_skin_id = Catalog.default_weapon_skin(h.weapon_type)
-		if player1:
-			h.set_target(player1)
-		add_child(h)
-		print("MeleeTest: spar hunter ", i, " skin=", h.skin_id)
+
+
+func _wire_hunter_kills(hunters: Array) -> void:
+	for h in hunters:
+		if h == null or not is_instance_valid(h):
+			continue
+		if h.has_signal("died_by") and not h.died_by.is_connected(_on_hunter_killed):
+			h.died_by.connect(_on_hunter_killed)
+
+
+func _on_hunter_killed(killer: Node) -> void:
+	if arena_manager and arena_manager.has_method("record_kill") and killer:
+		arena_manager.record_kill(killer)
+	if tribunal_hud and tribunal_hud.has_method("push_feed") and killer:
+		tribunal_hud.push_feed("%s · hunter down" % killer.name)
 
 
 func _setup_ui():
@@ -334,9 +363,8 @@ func _setup_ui():
 
 	if ui_layer:
 		if instructions_label:
-			instructions_label.text = """P1: WASD Mouse · Shift sprint · LMB/RMB · Space block · F shove · C dodge · E scavenge · Q trap
-P2: IJKL · Ctrl sprint · U/O · P block · ; shove · V dodge · H scavenge · B trap
-TAB cam · ESC mouse · R restart match · LAST STAND (no respawn) · zone + hunters"""
+			instructions_label.text = """P1 E scavenge · Q trap · C dodge · LMB/RMB fight    P2 H scavenge · B trap · V dodge
+Round: FIGHT → last stand → FINISH BOARD · R rematch · TAB cam · ESC mouse"""
 			instructions_label.offset_left = 16
 			instructions_label.offset_top = 640
 			instructions_label.offset_right = 980
@@ -438,12 +466,24 @@ func _on_player_died(player):
 
 func _on_match_ended(winner):
 	print("MATCH ENDED — Winner:", winner.name if winner else "Draw")
-	# Banner also via TribunalHUD.bind_arena(match_ended); keep fallback if HUD absent
-	if tribunal_hud == null and instructions_label:
-		instructions_label.text = "MATCH OVER — Winner: %s\nR to restart" % (winner.name if winner else "Draw")
+	_set_fighters_frozen(true)
+	# Stop zone damage spam
+	if zone_system and zone_system.has_method("stop"):
+		zone_system.stop()
+	# Full finish board
+	if finish_board and arena_manager and arena_manager.has_method("build_results_payload"):
+		var payload: Dictionary = arena_manager.build_results_payload(winner)
+		finish_board.show_results(payload)
+	elif tribunal_hud and tribunal_hud.has_method("show_winner_banner"):
+		tribunal_hud.show_winner_banner(winner)
+	if instructions_label:
+		instructions_label.text = "ROUND OVER — R rematch"
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Finish board handles R when showing
+	if finish_board and finish_board.has_method("is_showing") and finish_board.is_showing():
+		return
 	if event.is_action_pressed("ui_cancel"):
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

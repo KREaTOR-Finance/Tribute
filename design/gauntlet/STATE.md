@@ -6,7 +6,7 @@
 **Parity board:** `design/gauntlet/CULLING_PARITY.md`  
 **Mission card:** `design/gauntlet/MISSION_CARD.md`  
 **Gaps:** `design/gauntlet/PARITY_GAPS.md` (pre-army; code now ahead of doc)  
-**Updated:** 2026-08-06 (post-critic: dense cover, E-channel loot, last stand)
+**Updated:** 2026-08-06 (finished environment + finish board + full round)
 
 ## Delivery surfaces
 
@@ -43,3 +43,5 @@
 
 Vertical-slice P0 systems are present and MeleeTest boots clean.  
 Human owns final “better than Culling” feel A/B. Do not declare product victory.
+
+| Finished env + finish board | DONE | Courtyard, intro→fight→board |

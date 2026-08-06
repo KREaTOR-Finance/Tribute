@@ -985,6 +985,12 @@ func die(attacker: Node):
 	_spawn_kill_particles()
 	if _char_anim:
 		_char_anim.set_pose(CharAnimScript.Pose.DEAD)
+	# Credit killer for finish board
+	var parent = get_parent()
+	if attacker and parent and parent.get_node_or_null("ArenaManager"):
+		var am = parent.get_node("ArenaManager")
+		if am.has_method("record_kill"):
+			am.record_kill(attacker, self)
 	player_died.emit()
 	set_physics_process(false)
 	# Brief death pose before hide

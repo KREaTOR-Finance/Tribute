@@ -93,6 +93,18 @@ func spawn_loot_at(arena: Node3D, pos: Vector3) -> void:
 	_spawn_cache_at(arena, pos + Vector3(0, 0.35, 0))
 
 
+## Place caches on designed points (finished arena layout).
+func spawn_loot_at_points(arena: Node3D, points: Array, count: int = -1) -> void:
+	if points.is_empty():
+		spawn_loot_in_arena(arena, count)
+		return
+	var n := points.size() if count < 0 else mini(count, points.size())
+	print("ScavengingSystem: spawning %d caches on designed points..." % n)
+	for i in n:
+		var p: Vector3 = points[i]
+		_spawn_cache_at(arena, p)
+
+
 func _spawn_cache_at(arena: Node3D, pos: Vector3) -> void:
 	var loot: Area3D = PropSkinUtil.spawn_loot(arena, pos, false, 0)
 	if loot == null:

@@ -5,6 +5,9 @@ class_name HunterAI
 ## First-class SkinCatalog character + weapon skins (OBJ preferred).
 
 signal died
+signal died_by(killer: Node)
+
+var last_hit_by: Node = null
 
 const Catalog = preload("res://scripts/SkinCatalog.gd")
 const ObjLoader = preload("res://scripts/ObjMeshLoader.gd")
@@ -211,6 +214,8 @@ func set_target(t: Node3D) -> void:
 func apply_damage(amount: int, from: Node3D = null, knockback: float = 0.0) -> void:
 	if not _alive:
 		return
+	if from:
+		last_hit_by = from
 	health = max(0, health - amount)
 	if from and knockback > 0.0:
 		var dir := (global_position - from.global_position).normalized()
@@ -258,6 +263,7 @@ func _die() -> void:
 		scene.add_child(burst)
 		burst.spawn_kill(death_pos, Vector3.UP)
 	died.emit()
+	died_by.emit(last_hit_by)
 	# Death mark + loot prop skins (Culling fallen-hunter juice)
 	var parent = get_parent()
 	if parent is Node3D:
