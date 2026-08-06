@@ -83,4 +83,18 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Juice")
 	float HeavyCameraTrauma = 0.45f;
+
+	// --- Geometry identity (SYS-WEAPON) ---
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Geometry")
+	float HitSphereRadius = 40.f;
+
+	/** Visual stick length for procedural weapon mesh (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Geometry")
+	float VisualLengthCm = 80.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Geometry")
+	float VisualThickness = 0.12f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Geometry")
+	FLinearColor VisualColor = FLinearColor(0.7f, 0.7f, 0.75f);
 };

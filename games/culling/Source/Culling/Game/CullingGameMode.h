@@ -4,8 +4,10 @@
 #include "GameFramework/GameModeBase.h"
 #include "CullingGameMode.generated.h"
 
+class ACullingMeleeArena;
+
 /**
- * Slice GameMode — guarantees ACullingCharacter possession (SYS-MOVE gap fix).
+ * Tribune MeleeTest GameMode — pawn, HUD, procedural arena.
  */
 UCLASS()
 class CULLING_API ACullingGameMode : public AGameModeBase
@@ -14,4 +16,14 @@ class CULLING_API ACullingGameMode : public AGameModeBase
 
 public:
 	ACullingGameMode();
+
+	virtual void BeginPlay() override;
+	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
+	virtual void RestartPlayer(AController* NewPlayer) override;
+
+protected:
+	void EnsureArena();
+
+	UPROPERTY()
+	TObjectPtr<ACullingMeleeArena> Arena;
 };

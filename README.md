@@ -1,17 +1,18 @@
-# Tribute
+# Tribune
 
-**Spiritual successor to *The Culling*** — skill-based melee battle royale, built with a Gauntlet Loop agent army on Unreal Engine 5 + Blender.
+**Spiritual successor to *The Culling*** — skill-based melee battle royale (**Tribune**), built with a Gauntlet Loop agent army on Unreal Engine 5 + Blender.
 
 | | |
 |--|--|
+| **Product** | Tribune |
 | **GitHub** | https://github.com/KREaTOR-Finance/Tribute |
-| **Engine** | Unreal Engine 5.8+ (`games/culling/` module path; product name: Tribute) |
+| **Engine** | Unreal Engine 5.8+ (`games/culling/` module path) |
 | **Method** | Gauntlet Loop (`/gauntlet-loop`) — independent builders + blind critics |
 | **Studio root** | This repo (ForgeStudio layout) |
 
 This repo is both:
 1. **Command HQ** — agent platoon, design, assets, Gauntlet board
-2. **Game workspace** — `games/culling/` (UE project; shipping name **Tribute**)
+2. **Game workspace** — `games/culling/` (UE project; shipping name **Tribune**)
 
 ## Stack
 

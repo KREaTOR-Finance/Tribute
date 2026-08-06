@@ -1,33 +1,99 @@
 #include "Combat/CullingCombatFeedback.h"
-#include "GameFramework/WorldSettings.h"
+#include "Combat/CullingImpactFlash.h"
+#include "GameFramework/Actor.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 UCullingCombatFeedback::UCullingCombatFeedback()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 }
 
-void UCullingCombatFeedback::PlayHitImpact(float HitstopSeconds, float InTrauma)
+void UCullingCombatFeedback::BeginLocalHitstop(AActor* Actor, float /*Seconds*/)
 {
-	CameraTrauma = FMath::Min(MaxTrauma, CameraTrauma + InTrauma);
-
-	if (HitstopSeconds <= 0.f)
+	if (!Actor)
 	{
 		return;
 	}
 
-	if (UWorld* World = GetWorld())
+	if (!CachedDilations.Contains(Actor))
 	{
-		HitstopEndRealTime = World->GetRealTimeSeconds() + HitstopSeconds;
-		if (AWorldSettings* Settings = World->GetWorldSettings())
+		CachedDilations.Add(Actor, Actor->CustomTimeDilation);
+	}
+	Actor->CustomTimeDilation = HitstopDilation;
+	DilatedActors.AddUnique(Actor);
+}
+
+void UCullingCombatFeedback::EndLocalHitstop(AActor* Actor)
+{
+	if (!Actor)
+	{
+		return;
+	}
+	if (const float* Cached = CachedDilations.Find(Actor))
+	{
+		Actor->CustomTimeDilation = *Cached;
+		CachedDilations.Remove(Actor);
+	}
+	else
+	{
+		Actor->CustomTimeDilation = 1.f;
+	}
+}
+
+void UCullingCombatFeedback::PlayHitImpact(float HitstopSeconds, float InTrauma, AActor* OptionalVictim)
+{
+	CameraTrauma = FMath::Min(MaxTrauma, CameraTrauma + InTrauma);
+	const bool bHeavy = InTrauma >= 0.35f;
+	OnImpactFx(bHeavy, InTrauma);
+
+	AActor* Owner = GetOwner();
+	UWorld* World = GetWorld();
+	if (World && Owner)
+	{
+		// Shipping-safe impact payload: mesh flash + light (engine BasicShapes, not DrawDebug/EditorSounds)
+		const FVector ImpactLoc = OptionalVictim
+			? OptionalVictim->GetActorLocation() + FVector(0.f, 0.f, 50.f)
+			: Owner->GetActorLocation() + Owner->GetActorForwardVector() * 80.f + FVector(0.f, 0.f, 50.f);
+		const float FlashR = bHeavy ? 55.f : 32.f;
+		const FLinearColor FlashC = bHeavy
+			? FLinearColor(1.f, 0.25f, 0.08f, 1.f)
+			: FLinearColor(1.f, 0.85f, 0.25f, 1.f);
+
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (ACullingImpactFlash* Flash = World->SpawnActor<ACullingImpactFlash>(ACullingImpactFlash::StaticClass(), ImpactLoc, FRotator::ZeroRotator, Params))
 		{
-			if (!bHitstopActive)
-			{
-				CachedTimeDilation = Settings->TimeDilation;
-				bHitstopActive = true;
-			}
-			Settings->SetTimeDilation(0.12f);
+			Flash->Configure(FlashR, FlashC, bHeavy ? 0.14f : 0.1f, bHeavy);
 		}
+
+		// Prefer non-editor engine audio if present; skip silently if missing
+		static const TCHAR* SoundCandidates[] = {
+			TEXT("/Engine/VREditor/Sounds/UI/Collide_No_01.Collide_No_01"),
+			TEXT("/Engine/EngineSounds/BaseSound.BaseSound"),
+		};
+		for (const TCHAR* Path : SoundCandidates)
+		{
+			if (USoundBase* Cue = LoadObject<USoundBase>(nullptr, Path))
+			{
+				UGameplayStatics::PlaySoundAtLocation(World, Cue, ImpactLoc, bHeavy ? 1.0f : 0.65f, bHeavy ? 0.75f : 1.15f);
+				break;
+			}
+		}
+	}
+
+	if (HitstopSeconds <= 0.f || !World)
+	{
+		return;
+	}
+
+	HitstopEndRealTime = World->GetRealTimeSeconds() + HitstopSeconds;
+	bHitstopActive = true;
+	BeginLocalHitstop(Owner, HitstopSeconds);
+	if (OptionalVictim && OptionalVictim != Owner)
+	{
+		BeginLocalHitstop(OptionalVictim, HitstopSeconds);
 	}
 }
 
@@ -36,7 +102,6 @@ void UCullingCombatFeedback::TickComponent(float DeltaTime, ELevelTick TickType,
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// Decay trauma using real time so slow-mo does not freeze juice recovery forever
 	float RealDt = DeltaTime;
 	if (UWorld* World = GetWorld())
 	{
@@ -50,10 +115,15 @@ void UCullingCombatFeedback::TickComponent(float DeltaTime, ELevelTick TickType,
 		if (bHitstopActive && Now >= HitstopEndRealTime)
 		{
 			bHitstopActive = false;
-			if (AWorldSettings* Settings = World->GetWorldSettings())
+			for (const TWeakObjectPtr<AActor>& Weak : DilatedActors)
 			{
-				Settings->SetTimeDilation(CachedTimeDilation > 0.f ? CachedTimeDilation : 1.f);
+				if (AActor* A = Weak.Get())
+				{
+					EndLocalHitstop(A);
+				}
 			}
+			DilatedActors.Reset();
+			CachedDilations.Reset();
 		}
 	}
 

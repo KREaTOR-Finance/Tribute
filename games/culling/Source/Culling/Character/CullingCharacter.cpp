@@ -1,11 +1,16 @@
 #include "Character/CullingCharacter.h"
 #include "Combat/CullingCombatComponent.h"
 #include "Combat/CullingCombatFeedback.h"
+#include "Combat/CullingWeaponCatalog.h"
+#include "Combat/CullingWeaponProfile.h"
 #include "Movement/CullingMovementDefaults.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Culling.h"
 
 ACullingCharacter::ACullingCharacter()
@@ -34,6 +39,12 @@ ACullingCharacter::ACullingCharacter()
 	Combat = CreateDefaultSubobject<UCullingCombatComponent>(TEXT("Combat"));
 	Feedback = CreateDefaultSubobject<UCullingCombatFeedback>(TEXT("Feedback"));
 
+	WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
+	WeaponMesh->SetupAttachment(GetMesh() ? GetMesh() : GetRootComponent());
+	WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WeaponMesh->SetRelativeLocation(FVector(40.f, 25.f, 40.f));
+	WeaponMesh->SetRelativeRotation(FRotator(0.f, 0.f, 80.f));
+
 	// CDO defaults: weighty move/camera even before data asset assignment
 	GetCharacterMovement()->MaxWalkSpeed = 480.f;
 	GetCharacterMovement()->MaxAcceleration = 1600.f;
@@ -48,6 +59,59 @@ void ACullingCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	ApplyMovementDefaults();
+	InitDefaultWeapons();
+	SelectWeaponSlot(1); // default sword — Culling mid tool fantasy
+}
+
+void ACullingCharacter::InitDefaultWeapons()
+{
+	WeaponSlots.Reset();
+	WeaponSlots.Add(UCullingWeaponCatalog::MakeFist(this));
+	WeaponSlots.Add(UCullingWeaponCatalog::MakeSword(this));
+	WeaponSlots.Add(UCullingWeaponCatalog::MakeAxe(this));
+}
+
+void ACullingCharacter::SelectWeaponSlot(int32 SlotIndex)
+{
+	if (!Combat || WeaponSlots.Num() == 0)
+	{
+		return;
+	}
+	const int32 Idx = FMath::Clamp(SlotIndex, 0, WeaponSlots.Num() - 1);
+	ActiveWeaponSlot = Idx;
+	Combat->WeaponProfile = WeaponSlots[Idx];
+	RefreshWeaponVisual();
+	UE_LOG(LogCulling, Log, TEXT("Weapon slot %d -> %s"), Idx,
+		Combat->WeaponProfile ? *Combat->WeaponProfile->WeaponId.ToString() : TEXT("null"));
+}
+
+void ACullingCharacter::RefreshWeaponVisual()
+{
+	if (!WeaponMesh || !Combat || !Combat->WeaponProfile)
+	{
+		return;
+	}
+	UCullingWeaponProfile* P = Combat->WeaponProfile;
+	if (!WeaponMesh->GetStaticMesh())
+	{
+		if (UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")))
+		{
+			WeaponMesh->SetStaticMesh(Cube);
+		}
+	}
+	// Cube is 100cm; scale to stick: thin X/Y, long Z
+	const float Len = FMath::Max(20.f, P->VisualLengthCm) / 100.f;
+	const float Thick = FMath::Max(0.05f, P->VisualThickness);
+	WeaponMesh->SetRelativeScale3D(FVector(Thick, Thick, Len));
+	if (UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+	{
+		if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(BaseMat, this))
+		{
+			MID->SetVectorParameterValue(TEXT("Color"), P->VisualColor);
+			MID->SetVectorParameterValue(TEXT("BaseColor"), P->VisualColor);
+			WeaponMesh->SetMaterial(0, MID);
+		}
+	}
 }
 
 void ACullingCharacter::Tick(float DeltaSeconds)
@@ -162,6 +226,9 @@ void ACullingCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	PlayerInputComponent->BindAction("Block", IE_Pressed, this, &ACullingCharacter::OnBlockPressed);
 	PlayerInputComponent->BindAction("Block", IE_Released, this, &ACullingCharacter::OnBlockReleased);
 	PlayerInputComponent->BindAction("Shove", IE_Pressed, this, &ACullingCharacter::OnShove);
+	PlayerInputComponent->BindAction("Weapon1", IE_Pressed, this, &ACullingCharacter::OnWeapon1);
+	PlayerInputComponent->BindAction("Weapon2", IE_Pressed, this, &ACullingCharacter::OnWeapon2);
+	PlayerInputComponent->BindAction("Weapon3", IE_Pressed, this, &ACullingCharacter::OnWeapon3);
 }
 
 void ACullingCharacter::MoveForward(float Value)
@@ -241,3 +308,7 @@ void ACullingCharacter::OnShove()
 		Combat->TryShove();
 	}
 }
+
+void ACullingCharacter::OnWeapon1() { SelectWeaponSlot(0); }
+void ACullingCharacter::OnWeapon2() { SelectWeaponSlot(1); }
+void ACullingCharacter::OnWeapon3() { SelectWeaponSlot(2); }

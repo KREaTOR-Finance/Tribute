@@ -38,11 +38,18 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Culling|Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
 
+	/** Procedural weapon stick — identity by profile length/color. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Culling|Weapon")
+	TObjectPtr<class UStaticMeshComponent> WeaponMesh;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Culling|Data")
 	TObjectPtr<UCullingMovementDefaults> MovementDefaults;
 
 	UFUNCTION(BlueprintCallable, Category = "Culling")
 	void ApplyMovementDefaults();
+
+	UFUNCTION(BlueprintCallable, Category = "Culling|Weapon")
+	void SelectWeaponSlot(int32 SlotIndex);
 
 protected:
 	void MoveForward(float Value);
@@ -55,6 +62,16 @@ protected:
 	void OnBlockPressed();
 	void OnBlockReleased();
 	void OnShove();
+	void OnWeapon1();
+	void OnWeapon2();
+	void OnWeapon3();
 
+	void InitDefaultWeapons();
+	void RefreshWeaponVisual();
 	void UpdateCombatMovementScalars();
+
+	UPROPERTY()
+	TArray<TObjectPtr<class UCullingWeaponProfile>> WeaponSlots;
+
+	int32 ActiveWeaponSlot = 0;
 };

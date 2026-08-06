@@ -96,6 +96,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	bool IsAlive() const { return MeleeState != ECullingMeleeState::Dead && Health > 0.f; }
 
+	/** Training dummy / round reset — restores vitals and Idle. */
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	void ForceRevive();
+
 protected:
 	void SetMeleeState(ECullingMeleeState NewState);
 	bool CanAct() const;

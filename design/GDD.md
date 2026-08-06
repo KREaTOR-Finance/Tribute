@@ -1,6 +1,6 @@
-# Game Design Document — Tribute
+# Game Design Document — Tribune
 
-> **Product name:** Tribute  
+> **Product name:** Tribune  
 > **Codename / module:** Culling (`games/culling/`)  
 > **Repo:** https://github.com/KREaTOR-Finance/Tribute  
 > **Engine:** Unreal Engine 5.8+ (primary)  
@@ -10,7 +10,7 @@
 
 ## Elevator pitch
 
-**Tribute** is a **skill-based melee battle royale** — a spiritual successor to *The Culling* — where movement, timing, spacing, and read/react win fights. Not spray. Not cover camping. Every duel should feel tense, readable, and earned.
+**Tribune** is a **skill-based melee battle royale** — a spiritual successor to *The Culling* — where movement, timing, spacing, and read/react win fights. Not spray. Not cover camping. Every duel should feel tense, readable, and earned.
 
 ## Design pillars (locked)
 

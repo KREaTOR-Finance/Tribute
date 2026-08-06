@@ -1,57 +1,36 @@
-# Gauntlet State Board — Culling
+# Gauntlet State Board — Tribune
 
-Last updated: 2026-08-05 (after R3)
+Last updated: 2026-08-05 (wave 2)
+
+**Product:** Tribune · **Reference:** The Culling · **Repo:** KREaTOR-Finance/Tribute
 
 ## Systems
 
 | ID | System | Status | Round | Last gap | Notes |
 |----|--------|--------|-------|----------|-------|
-| SYS-MOVE | Movement & camera | **PASS** | 3 | — | Possession + fallbacks + gamepad; feel unproven in PIE |
-| SYS-MELEE | Core melee combat | **PASS** | 2 | — | Hitstop/trauma on connect wired; juice still thin vs AAA |
-| SYS-WEAPON | Weapon/tool timing | PENDING | 0 | — | Runtime default fist; multi-weapon DA next |
-| SYS-LOADOUT | Perks/loadouts | PENDING | 0 | — | P1 |
-| SYS-AI | Bots | PENDING | 0 | — | Dummy target next for slice |
-| SYS-MAP | Map & zone | PENDING | 0 | — | **Next:** dedicated MeleeTest map (residual from MOVE critic) |
-| SYS-UI | HUD | PENDING | 0 | — | HP/STA |
-| SYS-JUICE | VFX/audio/hitstop | PENDING | 0 | — | Local hitstop (not global dilation) + SFX |
+| SYS-MOVE | Movement & camera | **PASS** | 3 | — | Prior wave |
+| SYS-MELEE | Core melee combat | **PASS** | 2 | — | Prior wave |
+| SYS-MAP | MeleeTest arena | **PASS** | 1 | — | Procedural 24m greybox + cover |
+| SYS-AI | Training dummy | **PASS** | 2 | compile/silhouette | Red sphere dummy, spar, ForceRevive |
+| SYS-JUICE | Hit feedback | **PASS** | 3 | debug→flash | Local hitstop + ImpactFlash actor |
+| SYS-WEAPON | Weapon profiles | **PASS** | 2 | identity | Fist/sword/axe + mesh sticks + hit radii |
+| SYS-UI | Vitals HUD | **PASS** | 3 | canvas→UMG | CullingVitalsWidget pure C++ UMG |
+| SYS-LOADOUT | Perks/loadouts | PENDING | 0 | — | Next |
 | SYS-META | Progression | PENDING | 0 | — | P2 |
-| SYS-ASSETS | Asset pipeline | PENDING | 1 | — | Descriptions exist; no meshes yet |
-| SYS-PERF | Console readiness | PENDING | 0 | — | Budgets published |
-| SYS-INTEG | Full integration | PENDING | 0 | — | After more P0 |
+| SYS-ASSETS | Art pipeline | PENDING | 1 | meshes | Descriptions only; Blender next |
+| SYS-PERF | Console readiness | PENDING | 0 | — | Budgets exist |
+| SYS-INTEG | Integration | CRITIQUE | 1 | — | Full-slice critic running |
 
-## Critic log
+## Critic log (wave 2)
 
-| When | System | Verdict | Single biggest gap |
-|------|--------|---------|-------------------|
-| R1 | SYS-MELEE | FAIL | Hit feedback never applied on connect |
-| R1 | SYS-MOVE | FAIL | Unassigned DA left system dead |
-| R2 | SYS-MELEE | **PASS** | (residual: global time dilation) |
-| R2 | SYS-MOVE | FAIL | No GameMode/DefaultPawn possession path |
-| R3 | SYS-MOVE | **PASS** | (residual: no custom MeleeTest map; feel unproven) |
-
-## Next recommended pairs
-
-1. SYS-MAP — tiny MeleeTest arena  
-2. SYS-AI — training dummy with combat component  
-3. SYS-JUICE — local hitstop, impact SFX hooks  
-4. SYS-ASSETS — Blender MCP hunter + sword after description  
+| System | R1 | R2 | R3 |
+|--------|----|----|-----|
+| SYS-MAP | **PASS** | — | — |
+| SYS-AI | FAIL compile | **PASS** | — |
+| SYS-JUICE | FAIL hollow | FAIL debug | **PASS** flash |
+| SYS-WEAPON | FAIL identity | **PASS** | — |
+| SYS-UI | FAIL canvas | FAIL UMG | **PASS** widget |
 
 ## Human brake
 
-You are the brake. Say **continue** to open next systems, or **stop**.
-
-## Artifact index
-
-```
-games/culling/Culling.uproject
-games/culling/Config/DefaultEngine.ini
-games/culling/Config/DefaultInput.ini
-games/culling/Source/Culling/Game/CullingGameMode.*
-games/culling/Source/Culling/Combat/*
-games/culling/Source/Culling/Movement/*
-games/culling/Source/Culling/Character/*
-games/culling/Content/Assets/**
-design/gauntlet/*
-design/systems/SYS-MOVE.md
-design/systems/SYS-MELEE.md
-```
+You are the brake. Agents continue until you say **stop**.

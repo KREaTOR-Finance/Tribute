@@ -35,6 +35,7 @@ void UCullingCombatComponent::BeginPlay()
 		WeaponProfile->HeavyHitstopSeconds = 0.09f;
 		WeaponProfile->LightCameraTrauma = 0.22f;
 		WeaponProfile->HeavyCameraTrauma = 0.48f;
+		WeaponProfile->HitSphereRadius = 34.f;
 	}
 }
 
@@ -225,6 +226,15 @@ bool UCullingCombatComponent::TryShove()
 	return true;
 }
 
+void UCullingCombatComponent::ForceRevive()
+{
+	Health = MaxHealth;
+	Stamina = MaxStamina;
+	HitActorsThisSwing.Reset();
+	StateTimeRemaining = 0.f;
+	SetMeleeState(ECullingMeleeState::Idle);
+}
+
 void UCullingCombatComponent::ApplyDamage(float Amount, AActor* InstigatorActor, bool bFromHeavy)
 {
 	if (!IsAlive())
@@ -261,8 +271,9 @@ void UCullingCombatComponent::PerformHitTrace(bool bHeavy)
 
 	TArray<FHitResult> Hits;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(CullingMelee), false, Owner);
+	const float Radius = WeaponProfile->HitSphereRadius > 0.f ? WeaponProfile->HitSphereRadius : 40.f;
 	GetWorld()->SweepMultiByChannel(Hits, Start, End, FQuat::Identity, ECC_Pawn,
-		FCollisionShape::MakeSphere(40.f), Params);
+		FCollisionShape::MakeSphere(Radius), Params);
 
 	for (const FHitResult& Hit : Hits)
 	{
@@ -283,12 +294,12 @@ void UCullingCombatComponent::PerformHitTrace(bool bHeavy)
 		}
 		OnHitLanded.Broadcast(Other, Damage, bHeavy);
 
-		// SYS-MELEE non-negotiable: hit feedback on connect (not self-graded polish — mandatory call)
+		// SYS-MELEE + SYS-JUICE: hit feedback on connect with local hitstop on attacker + victim
 		if (Feedback && WeaponProfile)
 		{
 			const float Hitstop = bHeavy ? WeaponProfile->HeavyHitstopSeconds : WeaponProfile->LightHitstopSeconds;
 			const float Trauma = bHeavy ? WeaponProfile->HeavyCameraTrauma : WeaponProfile->LightCameraTrauma;
-			Feedback->PlayHitImpact(Hitstop, Trauma);
+			Feedback->PlayHitImpact(Hitstop, Trauma, Other);
 		}
 	}
 }

@@ -5,9 +5,8 @@
 #include "CullingCombatFeedback.generated.h"
 
 /**
- * Minimal SYS-JUICE hooks used by SYS-MELEE on connect.
- * Hitstop via custom time dilation on owner world settings / local slow;
- * camera trauma is stored for the camera boom consumer.
+ * SYS-JUICE: Local hitstop + camera trauma (not permanent global world dilation).
+ * Applies CustomTimeDilation on owner (+ optional target) for multiplayer-safer feel.
  */
 UCLASS(ClassGroup = (Culling), meta = (BlueprintSpawnableComponent))
 class CULLING_API UCullingCombatFeedback : public UActorComponent
@@ -20,9 +19,9 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 		FActorComponentTickFunction* ThisTickFunction) override;
 
-	/** Apply hitstop + trauma. Call only on confirmed hit. */
+	/** Hitstop + trauma on confirmed connect. Optionally slow the victim too. */
 	UFUNCTION(BlueprintCallable, Category = "Culling|Juice")
-	void PlayHitImpact(float HitstopSeconds, float CameraTrauma);
+	void PlayHitImpact(float HitstopSeconds, float CameraTrauma, AActor* OptionalVictim = nullptr);
 
 	UPROPERTY(BlueprintReadOnly, Category = "Culling|Juice")
 	float CameraTrauma = 0.f;
@@ -33,9 +32,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Culling|Juice")
 	float MaxTrauma = 1.f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Culling|Juice")
+	float HitstopDilation = 0.12f;
+
+	/** Hook for audio — null-safe. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Culling|Juice")
+	void OnImpactFx(bool bHeavy, float Trauma);
+
 protected:
+	void BeginLocalHitstop(AActor* Actor, float Seconds);
+	void EndLocalHitstop(AActor* Actor);
+
 	bool bHitstopActive = false;
 	float HitstopEndRealTime = 0.f;
-	float CachedTimeDilation = 1.f;
 	float LastRealTime = 0.f;
+
+	UPROPERTY()
+	TArray<TWeakObjectPtr<AActor>> DilatedActors;
+
+	TMap<TWeakObjectPtr<AActor>, float> CachedDilations;
 };
