@@ -50,15 +50,17 @@ static func spawn_loot(parent: Node3D, pos: Vector3, auto_pickup: bool = true, h
 		loot.body_entered.connect(func(b: Node):
 			if not is_instance_valid(loot):
 				return
-			if b.is_in_group("players") or b is CharacterBody3D:
-				if b.has_method("heal_partial"):
-					b.heal_partial(heal_amount)
-				elif "health" in b and "max_health" in b:
-					b.health = mini(int(b.max_health), int(b.health) + heal_amount)
-					if b.has_signal("health_changed"):
-						b.health_changed.emit(b.health)
-				print("PropSkins: loot claimed by ", b.name)
-				loot.queue_free()
+			# Players only — never hunters/AI (they are CharacterBody3D too)
+			if not b.is_in_group("players"):
+				return
+			if b.has_method("heal_partial"):
+				b.heal_partial(heal_amount)
+			elif "health" in b and "max_health" in b:
+				b.health = mini(int(b.max_health), int(b.health) + heal_amount)
+				if b.has_signal("health_changed"):
+					b.health_changed.emit(b.health)
+			print("PropSkins: loot claimed by ", b.name)
+			loot.queue_free()
 		)
 	return loot
 

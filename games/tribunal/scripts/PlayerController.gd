@@ -197,6 +197,7 @@ func _ready():
 	base_heavy_cooldown = heavy_attack_cooldown
 
 	_load_humanoid_visual()
+	_ensure_hand_weapon_visual()
 	# Art skins (body rig + default weapon skin)
 	character_skin_id = SkinCat.default_character_skin(player_id)
 	weapon_skin_id = SkinCat.default_weapon_skin(1)
@@ -433,7 +434,27 @@ func _equip_test_weapon(weapon_type: int):
 	_apply_weapon_skin_to_hand()
 
 
+func _ensure_hand_weapon_visual() -> void:
+	# First-class weapon skins require Hand + WeaponVisual (scene may omit if parse-glitched)
+	var hand = get_node_or_null("Hand")
+	if hand == null:
+		hand = Node3D.new()
+		hand.name = "Hand"
+		hand.position = Vector3(-0.42, 1.05, 0.25)
+		hand.rotation_degrees = Vector3(0, 30, 0)
+		add_child(hand)
+		print(name, ": created Hand (missing from scene)")
+	var wv = hand.get_node_or_null("WeaponVisual")
+	if wv == null:
+		var WVS = load("res://scripts/WeaponVisual.gd")
+		wv = WVS.new()
+		wv.name = "WeaponVisual"
+		hand.add_child(wv)
+		print(name, ": created WeaponVisual (missing from scene)")
+
+
 func _apply_weapon_skin_to_hand() -> void:
+	_ensure_hand_weapon_visual()
 	var hand = get_node_or_null("Hand")
 	if hand == null:
 		return
