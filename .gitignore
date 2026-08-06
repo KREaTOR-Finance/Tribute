@@ -17,6 +17,12 @@ assets/free/**
 !assets/free/.gitkeep
 assets/imported/**
 !assets/imported/.gitkeep
+!assets/imported/tribune_proxies/
+!assets/imported/tribune_proxies/**
+*.gltf
+!assets/imported/tribune_proxies/*.obj
+!assets/imported/tribune_proxies/*.mtl
+!assets/imported/tribune_proxies/MANIFEST.md
 
 # Blender
 *.blend1

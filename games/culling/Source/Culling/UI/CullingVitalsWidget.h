@@ -48,4 +48,10 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> EnemyText;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> MetaText;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> PerkText;
 };

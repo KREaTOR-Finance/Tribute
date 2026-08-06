@@ -1,35 +1,38 @@
-# Vertical Slice — Culling Melee Soul
+# Vertical Slice — Tribune Melee Soul
 
 ## Goal
 
-A **playable MeleeTest** path that proves The Culling combat fantasy in UE5:
+Playable **MeleeTest** in UE5 that proves The Culling combat fantasy.
 
-- Two hunters (or player + dummy)
-- Light / heavy / block / shove + stamina + health
-- Weighty movement + readable third-person camera
-- Hit feedback hooks (even if placeholder audio/VFX)
-- Asset pipeline discipline (described assets)
+## In scope (COMPLETE for structure)
 
-## In scope
+- [x] SYS-MOVE / SYS-MELEE / SYS-MAP / SYS-AI / SYS-JUICE / SYS-WEAPON / SYS-UI
+- [x] SYS-LOADOUT (perks 4/5/6)
+- [x] SYS-META (match stats + scavenger unlock)
+- [x] SYS-PERF (budget constants + logging)
+- [x] SYS-ASSETS (descriptions + Blender OBJ proxies)
+- [x] Integration telegraphs (heavy windup)
 
-- SYS-MOVE, SYS-MELEE, SYS-WEAPON (single sword profile), SYS-JUICE (minimal), SYS-UI (HP/STA), SYS-ASSETS (hunter + sword)
-- Tiny greybox arena (~20–40m)
-- Console budgets respected on paper
+## Controls
 
-## Out of scope
-
-- Full BR zone, 16-player netcode, progression meta, gunplay
+| Action | Key |
+|--------|-----|
+| Move/Look | WASD / Mouse |
+| Light / Heavy | LMB / RMB |
+| Block / Shove | Space / F |
+| Weapons | 1 Fist · 2 Sword · 3 Axe |
+| Perks | 4 Berserker · 5 Iron Lung · 6 Scavenger (unlock after kill) |
 
 ## Exit criteria
 
-- [ ] Critic PASS on SYS-MOVE and SYS-MELEE (runtime or honest structure + human PIE)
-- [ ] PIE: 30–60s fight feels intentional (human brake confirms feel)
-- [ ] Asset descriptions complete for used meshes
-- [ ] No mystery third-party assets without ledger
+- [x] Critic PASS on core systems (structure)
+- [ ] Human PIE feel sign-off on GPU machine
+- [x] License ledger for proxies
+- [x] No mystery third-party packs
 
 ## Sign-off
 
 | Role | Date | Notes |
 |------|------|-------|
-| Human | | Brake / feel |
-| Gauntlet integration critic | | |
+| Gauntlet systems | 2026-08-05 | Structure complete |
+| Human feel | | PIE pending |

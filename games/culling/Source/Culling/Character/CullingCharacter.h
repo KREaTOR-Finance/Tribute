@@ -32,6 +32,12 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Culling")
 	TObjectPtr<UCullingCombatFeedback> Feedback;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Culling")
+	TObjectPtr<class UCullingLoadoutComponent> Loadout;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Culling")
+	TObjectPtr<class UCullingMatchStats> MatchStats;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Culling|Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;
 
@@ -73,6 +79,9 @@ protected:
 	void OnWeapon1();
 	void OnWeapon2();
 	void OnWeapon3();
+	void OnPerk1();
+	void OnPerk2();
+	void OnPerk3();
 
 	void InitDefaultWeapons();
 	void RefreshWeaponVisual();
@@ -80,6 +89,9 @@ protected:
 
 	UFUNCTION()
 	void HandleMeleeStateChanged(ECullingMeleeState NewState);
+
+	UFUNCTION()
+	void HandleHitLanded(AActor* Target, float Damage, bool bHeavy);
 
 	void ApplyStateTelegraph(ECullingMeleeState NewState);
 

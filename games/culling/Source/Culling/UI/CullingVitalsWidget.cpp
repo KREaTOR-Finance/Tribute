@@ -2,6 +2,9 @@
 #include "Combat/CullingCombatComponent.h"
 #include "Combat/CullingWeaponProfile.h"
 #include "AI/CullingDummyCharacter.h"
+#include "Loadout/CullingLoadoutComponent.h"
+#include "Loadout/CullingPerkDefinition.h"
+#include "Meta/CullingMatchStats.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/ProgressBar.h"
@@ -70,6 +73,14 @@ void UCullingVitalsWidget::EnsureTree()
 	WeaponText->SetColorAndOpacity(FSlateColor(FLinearColor(0.95f, 0.9f, 0.7f)));
 	LeftStack->AddChildToVerticalBox(WeaponText);
 
+	PerkText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("PerkText"));
+	PerkText->SetColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.95f, 0.75f)));
+	LeftStack->AddChildToVerticalBox(PerkText);
+
+	MetaText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MetaText"));
+	MetaText->SetColorAndOpacity(FSlateColor(FLinearColor(0.75f, 0.75f, 0.8f)));
+	LeftStack->AddChildToVerticalBox(MetaText);
+
 	// Enemy stack top-right
 	UVerticalBox* RightStack = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("RightStack"));
 	if (UCanvasPanelSlot* RSlot = RootCanvas->AddChildToCanvas(RightStack))
@@ -127,6 +138,23 @@ void UCullingVitalsWidget::SyncFromCombat()
 				? Combat->WeaponProfile->WeaponId.ToString()
 				: Combat->WeaponProfile->DisplayName.ToString();
 			WeaponText->SetText(FText::FromString(Name));
+		}
+		if (UCullingLoadoutComponent* Loadout = Pawn->FindComponentByClass<UCullingLoadoutComponent>())
+		{
+			if (PerkText)
+			{
+				const FString Perk = (Loadout->ActivePerk)
+					? Loadout->ActivePerk->DisplayName.ToString()
+					: TEXT("—");
+				PerkText->SetText(FText::FromString(FString::Printf(TEXT("PERK %s  (4/5/6)"), *Perk)));
+			}
+		}
+		if (UCullingMatchStats* Stats = Pawn->FindComponentByClass<UCullingMatchStats>())
+		{
+			if (MetaText)
+			{
+				MetaText->SetText(FText::FromString(Stats->BuildSummaryLine()));
+			}
 		}
 	}
 

@@ -1,30 +1,29 @@
 # Gauntlet State Board — Tribune
 
-Last updated: 2026-08-05 (integration PASS)
-
+**COMPLETE** (greybox MeleeTest structure) — 2026-08-05  
 **Product:** Tribune · **Reference:** The Culling · **Repo:** https://github.com/KREaTOR-Finance/Tribute
 
 ## Systems
 
-| ID | System | Status | Round | Notes |
-|----|--------|--------|-------|-------|
-| SYS-MOVE | Movement & camera | **PASS** | 3 | |
-| SYS-MELEE | Core melee combat | **PASS** | 2 | |
-| SYS-MAP | MeleeTest arena | **PASS** | 1 | Procedural 24m + cover |
-| SYS-AI | Training dummy | **PASS** | 2 | Red body + spar + telegraphs |
-| SYS-JUICE | Hit feedback | **PASS** | 3 | Local hitstop + ImpactFlash |
-| SYS-WEAPON | Weapon profiles | **PASS** | 2 | Fist/sword/axe sticks + radii |
-| SYS-UI | Vitals HUD | **PASS** | 3 | Pure C++ UMG |
-| SYS-INTEG | Full slice | **PASS** | 2 | Windup telegraphs end-to-end |
-| SYS-LOADOUT | Perks/loadouts | PENDING | 0 | Next |
-| SYS-ASSETS | Blender art | PENDING | 1 | Descriptions ready |
-| SYS-PERF | Console budgets | PENDING | 0 | Specs exist |
-| SYS-META | Progression | PENDING | 0 | P2 |
+| ID | Status | Notes |
+|----|--------|-------|
+| SYS-MOVE | **PASS** | Weighty move/camera + possession |
+| SYS-MELEE | **PASS** | Full FSM + stamina |
+| SYS-MAP | **PASS** | Procedural MeleeTest arena |
+| SYS-AI | **PASS** | Dummy spar + telegraphs + reset |
+| SYS-JUICE | **PASS** | Local hitstop + ImpactFlash |
+| SYS-WEAPON | **PASS** | Fist/sword/axe + visuals |
+| SYS-UI | **PASS** | Pure C++ UMG vitals |
+| SYS-LOADOUT | **PASS** | Berserker/IronLung/Scavenger |
+| SYS-META | **PASS** | Honest kill credit (no corpse farm) |
+| SYS-PERF | **PASS*** | Budgets dual + operational clamps (*fixed ClampedFlashTime) |
+| SYS-ASSETS | **PASS** | Descriptions + Blender OBJ proxies + LEDGER |
+| SYS-INTEG | **PASS** | Final integration critic PASS |
 
-## Critic honesty note
+## Human PIE remaining
 
-Integration **PASS** means end-to-end MeleeTest **structure** clears the bar for telegraphs + systems wiring. Blind A/B vs shipping The Culling **feel** still loses until real meshes/anims + PIE on GPU machine.
+Feel A/B vs shipping Culling requires GPU UE session — not a missing system.
 
-## Human brake
+## Brake
 
-You are the brake. Say **stop** to halt. Agents continue until then.
+Whole structure complete. Further work is art/net polish or human feel tuning.

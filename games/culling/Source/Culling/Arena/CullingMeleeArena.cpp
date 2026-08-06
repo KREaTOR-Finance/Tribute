@@ -3,6 +3,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Perf/CullingPerfBudgets.h"
 #include "Culling.h"
 
 ACullingMeleeArena::ACullingMeleeArena()
@@ -112,7 +113,12 @@ void ACullingMeleeArena::BuildGeometry()
 	AddBox(TEXT("Pillar"), FVector(0.f, 0.f, 120.f), FVector(0.8f, 0.8f, 2.4f), FLinearColor(0.3f, 0.3f, 0.32f));
 
 	bBuilt = true;
-	UE_LOG(LogCulling, Log, TEXT("MeleeArena built: floor=%.0fcm walls=%.0fcm pieces=%d"), FloorSizeCm, WallHeightCm, Pieces.Num());
+	if (Pieces.Num() > CullingPerfBudgets::MaxArenaStaticPieces)
+	{
+		UE_LOG(LogCulling, Warning, TEXT("MeleeArena pieces %d exceed budget %d"), Pieces.Num(), CullingPerfBudgets::MaxArenaStaticPieces);
+	}
+	UE_LOG(LogCulling, Log, TEXT("MeleeArena built: floor=%.0fcm walls=%.0fcm pieces=%d | %s"),
+		FloorSizeCm, WallHeightCm, Pieces.Num(), *CullingPerfBudgets::BudgetSummary());
 }
 
 void ACullingMeleeArena::SpawnDummyIfNeeded()

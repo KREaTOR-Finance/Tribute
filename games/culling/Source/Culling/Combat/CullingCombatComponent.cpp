@@ -1,6 +1,8 @@
 #include "Combat/CullingCombatComponent.h"
 #include "Combat/CullingWeaponProfile.h"
 #include "Combat/CullingCombatFeedback.h"
+#include "Loadout/CullingLoadoutComponent.h"
+#include "Meta/CullingMatchStats.h"
 #include "Culling.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
@@ -148,7 +150,12 @@ bool UCullingCombatComponent::TryStartHeavy()
 	bHeavyHeld = true;
 	HitActorsThisSwing.Reset();
 	SetMeleeState(ECullingMeleeState::HeavyWindup);
-	StateTimeRemaining = WeaponProfile->HeavyWindupSeconds;
+	float Windup = WeaponProfile->HeavyWindupSeconds;
+	if (const UCullingLoadoutComponent* Loadout = GetOwner() ? GetOwner()->FindComponentByClass<UCullingLoadoutComponent>() : nullptr)
+	{
+		Windup *= Loadout->GetHeavyWindupMul();
+	}
+	StateTimeRemaining = Windup;
 	return true;
 }
 
@@ -253,12 +260,24 @@ void UCullingCombatComponent::ApplyDamage(float Amount, AActor* InstigatorActor,
 	{
 		Final *= WeaponProfile->BlockDamageMultiplier;
 	}
+	if (const UCullingLoadoutComponent* SelfLoadout = GetOwner() ? GetOwner()->FindComponentByClass<UCullingLoadoutComponent>() : nullptr)
+	{
+		Final *= SelfLoadout->GetDamageTakenMul();
+	}
 
 	Health = FMath::Max(0.f, Health - Final);
+	if (UCullingMatchStats* Stats = GetOwner() ? GetOwner()->FindComponentByClass<UCullingMatchStats>() : nullptr)
+	{
+		Stats->RecordDamageTaken(Final);
+	}
 	if (Health <= 0.f)
 	{
 		SetMeleeState(ECullingMeleeState::Dead);
 		StateTimeRemaining = 0.f;
+		if (UCullingMatchStats* Stats = GetOwner() ? GetOwner()->FindComponentByClass<UCullingMatchStats>() : nullptr)
+		{
+			Stats->RecordDeath();
+		}
 	}
 }
 
@@ -271,7 +290,11 @@ void UCullingCombatComponent::PerformHitTrace(bool bHeavy)
 	}
 
 	const float Range = bHeavy ? WeaponProfile->HeavyRange : WeaponProfile->LightRange;
-	const float Damage = bHeavy ? WeaponProfile->HeavyDamage : WeaponProfile->LightDamage;
+	float Damage = bHeavy ? WeaponProfile->HeavyDamage : WeaponProfile->LightDamage;
+	if (const UCullingLoadoutComponent* Loadout = Owner->FindComponentByClass<UCullingLoadoutComponent>())
+	{
+		Damage *= Loadout->GetDamageDealtMul();
+	}
 	const FVector Start = Owner->GetActorLocation() + FVector(0, 0, 40.f);
 	const FVector End = Start + Owner->GetActorForwardVector() * Range;
 

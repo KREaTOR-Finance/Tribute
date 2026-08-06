@@ -3,6 +3,9 @@
 #include "Combat/CullingCombatFeedback.h"
 #include "Combat/CullingWeaponCatalog.h"
 #include "Combat/CullingWeaponProfile.h"
+#include "Loadout/CullingLoadoutComponent.h"
+#include "Meta/CullingMatchStats.h"
+#include "AI/CullingDummyCharacter.h"
 #include "Movement/CullingMovementDefaults.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -39,6 +42,8 @@ ACullingCharacter::ACullingCharacter()
 
 	Combat = CreateDefaultSubobject<UCullingCombatComponent>(TEXT("Combat"));
 	Feedback = CreateDefaultSubobject<UCullingCombatFeedback>(TEXT("Feedback"));
+	Loadout = CreateDefaultSubobject<UCullingLoadoutComponent>(TEXT("Loadout"));
+	MatchStats = CreateDefaultSubobject<UCullingMatchStats>(TEXT("MatchStats"));
 
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
 	BodyMesh->SetupAttachment(GetCapsuleComponent());
@@ -97,7 +102,51 @@ void ACullingCharacter::BeginPlay()
 	if (Combat)
 	{
 		Combat->OnMeleeStateChanged.AddDynamic(this, &ACullingCharacter::HandleMeleeStateChanged);
+		Combat->OnHitLanded.AddDynamic(this, &ACullingCharacter::HandleHitLanded);
 		ApplyStateTelegraph(Combat->MeleeState);
+	}
+	if (Loadout)
+	{
+		Loadout->ApplyActivePerkToCombat();
+	}
+}
+
+void ACullingCharacter::HandleHitLanded(AActor* Target, float Damage, bool /*bHeavy*/)
+{
+	// Only count hits that land on a living combatant (no corpse farming)
+	UCullingCombatComponent* Other = Target
+		? Target->FindComponentByClass<UCullingCombatComponent>()
+		: nullptr;
+	if (!Other)
+	{
+		return;
+	}
+
+	// Damage applied before OnHitLanded. Corpse swings must not farm kills.
+	if (Other->MeleeState == ECullingMeleeState::Dead && Other->Health <= 0.f)
+	{
+		// First kill swing: ApplyDamage set dead this hit. Later corpse swings: still dead, Health 0.
+		// Use a short "already credited" tag on target to prevent multi-kill.
+		static const FName KillCreditedTag(TEXT("KillCredited"));
+		const bool bAlreadyCredited = Target->ActorHasTag(KillCreditedTag);
+		if (MatchStats && !bAlreadyCredited)
+		{
+			MatchStats->RecordHit();
+			MatchStats->RecordDamageDealt(Damage);
+			MatchStats->RecordKill();
+			Target->Tags.AddUnique(KillCreditedTag);
+			if (Loadout)
+			{
+				Loadout->UnlockPerk(FName(TEXT("scavenger")));
+			}
+		}
+		return;
+	}
+
+	if (Other->IsAlive() && MatchStats)
+	{
+		MatchStats->RecordHit();
+		MatchStats->RecordDamageDealt(Damage);
 	}
 }
 
@@ -270,6 +319,7 @@ void ACullingCharacter::UpdateCombatMovementScalars()
 	const float Base = MovementDefaults ? MovementDefaults->MaxWalkSpeed : 480.f;
 	const float BlockMult = MovementDefaults ? MovementDefaults->BlockMoveSpeedMultiplier : 0.55f;
 	const float HeavyMult = MovementDefaults ? MovementDefaults->HeavyWindupMoveSpeedMultiplier : 0.4f;
+	const float PerkMul = Loadout ? Loadout->GetMoveSpeedMul() : 1.f;
 
 	float Mult = 1.f;
 	switch (Combat->MeleeState)
@@ -285,7 +335,7 @@ void ACullingCharacter::UpdateCombatMovementScalars()
 		break;
 	}
 
-	GetCharacterMovement()->MaxWalkSpeed = Base * Mult;
+	GetCharacterMovement()->MaxWalkSpeed = Base * Mult * PerkMul;
 }
 
 // Camera micro-shake from combat trauma (SYS-MOVE + SYS-JUICE bridge)
@@ -310,6 +360,9 @@ void ACullingCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	PlayerInputComponent->BindAction("Weapon1", IE_Pressed, this, &ACullingCharacter::OnWeapon1);
 	PlayerInputComponent->BindAction("Weapon2", IE_Pressed, this, &ACullingCharacter::OnWeapon2);
 	PlayerInputComponent->BindAction("Weapon3", IE_Pressed, this, &ACullingCharacter::OnWeapon3);
+	PlayerInputComponent->BindAction("Perk1", IE_Pressed, this, &ACullingCharacter::OnPerk1);
+	PlayerInputComponent->BindAction("Perk2", IE_Pressed, this, &ACullingCharacter::OnPerk2);
+	PlayerInputComponent->BindAction("Perk3", IE_Pressed, this, &ACullingCharacter::OnPerk3);
 }
 
 void ACullingCharacter::MoveForward(float Value)
@@ -393,3 +446,6 @@ void ACullingCharacter::OnShove()
 void ACullingCharacter::OnWeapon1() { SelectWeaponSlot(0); }
 void ACullingCharacter::OnWeapon2() { SelectWeaponSlot(1); }
 void ACullingCharacter::OnWeapon3() { SelectWeaponSlot(2); }
+void ACullingCharacter::OnPerk1() { if (Loadout) { Loadout->SelectPerkByIndex(0); } }
+void ACullingCharacter::OnPerk2() { if (Loadout) { Loadout->SelectPerkByIndex(1); } }
+void ACullingCharacter::OnPerk3() { if (Loadout) { Loadout->SelectPerkByIndex(2); } }

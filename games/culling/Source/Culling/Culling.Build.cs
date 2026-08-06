@@ -12,11 +12,9 @@ public class Culling : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"InputCore",
-			"EnhancedInput",
-			"GameplayTags",
-			"GameplayAbilities",
-			"GameplayTasks",
 			"UMG",
+			"Slate",
+			"SlateCore",
 			"NetCore"
 		});
 

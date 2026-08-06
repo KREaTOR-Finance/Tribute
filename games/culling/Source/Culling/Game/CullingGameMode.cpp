@@ -7,6 +7,8 @@
 #include "GameFramework/PlayerController.h"
 #include "Blueprint/UserWidget.h"
 #include "EngineUtils.h"
+#include "Perf/CullingPerfBudgets.h"
+#include "Engine/Engine.h"
 #include "Culling.h"
 
 ACullingGameMode::ACullingGameMode()
@@ -18,6 +20,25 @@ ACullingGameMode::ACullingGameMode()
 void ACullingGameMode::BeginPlay()
 {
 	Super::BeginPlay();
+	UE_LOG(LogCulling, Log, TEXT("%s"), *CullingPerfBudgets::BudgetSummary());
+
+	// Medium console-floor scalability from CullingPerfBudgets dual (0=Low … 3=Epic)
+	if (GEngine)
+	{
+		auto SetSg = [this](const TCHAR* Name, int32 Quality)
+		{
+			GEngine->Exec(GetWorld(), *FString::Printf(TEXT("%s %d"), Name, Quality));
+		};
+		SetSg(TEXT("sg.ViewDistanceQuality"), CullingPerfBudgets::ScalabilityViewDistance);
+		SetSg(TEXT("sg.AntiAliasingQuality"), CullingPerfBudgets::ScalabilityAntiAliasing);
+		SetSg(TEXT("sg.ShadowQuality"), CullingPerfBudgets::ScalabilityShadow);
+		SetSg(TEXT("sg.PostProcessQuality"), CullingPerfBudgets::ScalabilityPostProcess);
+		SetSg(TEXT("sg.TextureQuality"), CullingPerfBudgets::ScalabilityTexture);
+		SetSg(TEXT("sg.EffectsQuality"), CullingPerfBudgets::ScalabilityEffects);
+		SetSg(TEXT("sg.FoliageQuality"), CullingPerfBudgets::ScalabilityFoliage);
+		SetSg(TEXT("sg.ShadingQuality"), CullingPerfBudgets::ScalabilityShading);
+	}
+
 	EnsureArena();
 
 	// SYS-UI: spawn pure-C++ UMG vitals for each local player

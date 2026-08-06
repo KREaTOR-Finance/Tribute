@@ -4,7 +4,8 @@ Every free or third-party pack used in the project **must** have a row here befo
 
 | Pack ID | Source | Path | License | Commercial OK? | URL | Added | Notes |
 |---------|--------|------|---------|----------------|-----|-------|-------|
-| _example-kenney-proto_ | Kenney | `assets/free/kenney/prototype/` | CC0 | Yes | https://kenney.nl | YYYY-MM-DD | Prototype only |
+| tribune-proxy-exports | In-house Blender script | `assets/imported/tribune_proxies/` | All rights reserved (project original) | Yes | tools/scripts/export_slice_proxies.py | 2026-08-05 | Greybox proxies; original generation |
+| unreal-engine-basicshapes | Epic Games | Engine runtime | Epic EULA | Yes (with UE) | Engine/BasicShapes | 2026-08-05 | Runtime cubes/spheres only |
 
 ## How to add a pack
 

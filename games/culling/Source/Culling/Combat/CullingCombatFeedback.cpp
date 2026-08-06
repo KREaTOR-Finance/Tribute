@@ -1,7 +1,9 @@
 #include "Combat/CullingCombatFeedback.h"
 #include "Combat/CullingImpactFlash.h"
+#include "Perf/CullingPerfBudgets.h"
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 
@@ -61,11 +63,22 @@ void UCullingCombatFeedback::PlayHitImpact(float HitstopSeconds, float InTrauma,
 			? FLinearColor(1.f, 0.25f, 0.08f, 1.f)
 			: FLinearColor(1.f, 0.85f, 0.25f, 1.f);
 
-		FActorSpawnParameters Params;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		if (ACullingImpactFlash* Flash = World->SpawnActor<ACullingImpactFlash>(ACullingImpactFlash::StaticClass(), ImpactLoc, FRotator::ZeroRotator, Params))
+		// Enforce concurrent flash budget
+		int32 LiveFlashes = 0;
+		for (TActorIterator<ACullingImpactFlash> It(World); It; ++It)
 		{
-			Flash->Configure(FlashR, FlashC, bHeavy ? 0.14f : 0.1f, bHeavy);
+			++LiveFlashes;
+		}
+		if (LiveFlashes < CullingPerfBudgets::MaxConcurrentImpactFlashes)
+		{
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			if (ACullingImpactFlash* Flash = World->SpawnActor<ACullingImpactFlash>(ACullingImpactFlash::StaticClass(), ImpactLoc, FRotator::ZeroRotator, Params))
+			{
+				const float Life = CullingPerfBudgets::ClampedFlashTime(
+					bHeavy ? CullingPerfBudgets::DefaultHeavyFlashLife : CullingPerfBudgets::DefaultLightFlashLife);
+				Flash->Configure(FlashR, FlashC, Life, bHeavy);
+			}
 		}
 
 		// Prefer non-editor engine audio if present; skip silently if missing

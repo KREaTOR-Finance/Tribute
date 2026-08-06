@@ -190,6 +190,8 @@ void ACullingDummyCharacter::ResetDummy()
 	}
 	SetActorLocationAndRotation(SpawnLocation, SpawnRotation, false, nullptr, ETeleportType::ResetPhysics);
 	Combat->ForceRevive();
+	// Allow a fresh kill credit next life
+	Tags.Remove(FName(TEXT("KillCredited")));
 	ResetCountdown = -1.f;
 	SparCountdown = SparIntervalSeconds;
 	UE_LOG(LogCulling, Log, TEXT("Dummy reset"));

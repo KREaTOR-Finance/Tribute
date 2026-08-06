@@ -1,4 +1,5 @@
 #include "Combat/CullingImpactFlash.h"
+#include "Perf/CullingPerfBudgets.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
@@ -21,7 +22,7 @@ ACullingImpactFlash::ACullingImpactFlash()
 
 void ACullingImpactFlash::Configure(float Radius, const FLinearColor& Color, float LifetimeSeconds, bool bHeavy)
 {
-	Lifetime = FMath::Max(0.06f, LifetimeSeconds);
+	Lifetime = CullingPerfBudgets::ClampedFlashTime(LifetimeSeconds);
 	FlashColor = Color;
 	StartScale = (Radius / 100.f) * (bHeavy ? 0.35f : 0.22f);
 	EndScale = (Radius / 100.f) * (bHeavy ? 1.1f : 0.7f);
