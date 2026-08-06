@@ -14,7 +14,7 @@
 |--|--|
 | Fantasy | Humanoid player vs waves of humanoid AI (Culling contestant pressure) |
 | Spec | `design/systems/SYS-AI-WAVES.md` |
-| Status | IDENTIFIED + INTERPRETED · implementation next |
+| Status | WaveDirector implemented · schedule [2,3,4,5] · win-on-clear |
 | Win | Clear wave schedule `[2,3,4,5]` |
 | Lose | Player eliminated |
 

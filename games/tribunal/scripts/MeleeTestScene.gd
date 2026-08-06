@@ -18,17 +18,15 @@ const FinishBoardScript = preload("res://scripts/FinishBoard.gd")
 const GamepadBootstrapScript = preload("res://scripts/GamepadBootstrap.gd")
 const VisualPolishScript = preload("res://scripts/VisualPolish.gd")
 const ReplaySystemScript = preload("res://scripts/ReplaySystem.gd")
+const WaveDirectorScript = preload("res://scripts/WaveDirector.gd")
 
 @export var use_hotseat: bool = true
 @export var capture_mouse_on_start: bool = true
-@export var spawn_spar_hunters: bool = true
-@export var spar_hunter_count: int = 2
+@export var enable_vs1_waves: bool = true  # VS-1 Humanoid Wave Gauntlet (SYS-AI-WAVES)
 @export var enable_zone: bool = true
 @export var scav_loot_count: int = 14
 @export var last_stand_mode: bool = true
 @export var intro_countdown_seconds: float = 3.4
-@export var hunter_wave2_delay: float = 45.0
-@export var hunter_early_refill_min: float = 12.0
 
 @onready var player1 = $Player1
 @onready var player2 = $Player2
@@ -48,15 +46,14 @@ var tribunal_hud: CanvasLayer = null
 var finish_board = null
 var replay_system = null
 var hunter_spawner = null
+var wave_director = null
 var _arena_info: Dictionary = {}
 var _round_frozen: bool = true  # intro freeze
-var _hunter_wave2_done: bool = false
-var _hunter_early_refill_done: bool = false
 var _fight_elapsed: float = 0.0
 var _match_ended_handled: bool = false
 
 func _ready():
-	print("=== TRIBUNAL — CONSOLE SLICE ===")
+	print("=== TRIBUNAL — VS-1 HUMANOID WAVE GAUNTLET ===")
 	GamepadBootstrapScript.ensure()
 	if capture_mouse_on_start:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -74,8 +71,8 @@ func _ready():
 	_setup_ui()
 	_setup_finish_board()
 
-	if spawn_spar_hunters:
-		_spawn_spar_hunters(spar_hunter_count)
+	if enable_vs1_waves:
+		_setup_wave_director()
 	if enable_zone:
 		_init_zone()
 
@@ -85,7 +82,7 @@ func _ready():
 	if arena_manager and arena_manager.has_signal("match_started"):
 		if not arena_manager.match_started.is_connected(_on_match_started):
 			arena_manager.match_started.connect(_on_match_started)
-	print("Tribunal round: INTRO countdown → fight → finish board")
+	print("Tribunal VS-1: INTRO → humanoid waves [2,3,4,5] → finish board")
 
 
 func _setup_fighters() -> void:
@@ -185,11 +182,13 @@ func _on_match_started() -> void:
 	_fight_elapsed = 0.0
 	if zone_system and zone_system.has_method("start"):
 		zone_system.start()
+	if wave_director and wave_director.has_method("start"):
+		wave_director.start()
 	if replay_system and replay_system.has_method("start_recording"):
 		replay_system.start_recording()
 	if tribunal_hud and tribunal_hud.has_method("show_countdown"):
 		tribunal_hud.show_countdown("HUNT")
-	print("ROUND LIVE · recording replay · Judgement Chain live")
+	print("ROUND LIVE · VS-1 waves · Judgement Chain · replay recording")
 
 
 func _on_rematch() -> void:
@@ -413,8 +412,8 @@ func _apply_culling_environment() -> void:
 		add_child(we)
 
 
-func _spawn_spar_hunters(count: int) -> void:
-	# Prefer HunterSpawner (roles round-robin + catalog skins). Create if missing.
+func _setup_wave_director() -> void:
+	# VS-1: WaveDirector drives [2,3,4,5] humanoid hunters (SYS-AI-WAVES)
 	var spawner = get_node_or_null("HunterSpawner")
 	if spawner == null:
 		spawner = HunterSpawnerScript.new()
@@ -423,53 +422,53 @@ func _spawn_spar_hunters(count: int) -> void:
 	hunter_spawner = spawner
 	if player1 and spawner.has_method("set_player_target"):
 		spawner.set_player_target(player1)
-	elif player1 and "player_target" in spawner:
-		spawner.player_target = player1
-	if spawner.has_method("spawn_wave"):
-		var wave = spawner.spawn_wave(count)
-		_wire_hunter_kills(wave)
-		print("MeleeTest: hunters wave1=", wave.size())
-		# Timed wave 2 (always) — denser if field is empty
-		get_tree().create_timer(hunter_wave2_delay).timeout.connect(func ():
-			_try_hunter_wave2(false)
-		)
-		return
+	if spawner.has_signal("hunters_spawned") and not spawner.hunters_spawned.is_connected(_wire_hunter_kills):
+		spawner.hunters_spawned.connect(_wire_hunter_kills)
+
+	wave_director = get_node_or_null("WaveDirector")
+	if wave_director == null:
+		wave_director = WaveDirectorScript.new()
+		wave_director.name = "WaveDirector"
+		add_child(wave_director)
+	wave_director.wave_counts = [2, 3, 4, 5]
+	wave_director.max_alive = 6
+	wave_director.wave_delay = 3.0
+	wave_director.reinforce_seconds = 45.0
+	wave_director.configure(spawner, player1)
+	if not wave_director.wave_started.is_connected(_on_vs1_wave_started):
+		wave_director.wave_started.connect(_on_vs1_wave_started)
+	if not wave_director.wave_cleared.is_connected(_on_vs1_wave_cleared):
+		wave_director.wave_cleared.connect(_on_vs1_wave_cleared)
+	if not wave_director.all_waves_cleared.is_connected(_on_vs1_all_cleared):
+		wave_director.all_waves_cleared.connect(_on_vs1_all_cleared)
+	if not wave_director.reinforce_spawned.is_connected(_on_vs1_reinforce):
+		wave_director.reinforce_spawned.connect(_on_vs1_reinforce)
+	print("MeleeTest: WaveDirector armed (starts on HUNT) schedule=[2,3,4,5]")
 
 
-func _try_hunter_wave2(early: bool) -> void:
-	if _hunter_wave2_done and not early:
-		return
-	if early and _hunter_early_refill_done:
-		return
-	if hunter_spawner == null or not is_instance_valid(hunter_spawner):
-		return
-	if arena_manager and "phase" in arena_manager:
-		var ph := int(arena_manager.phase)
-		if ph == 0:  # INTRO
-			return
-		if ph == 2:  # ENDED
-			return
-	if _round_frozen or _match_ended_handled:
-		return
-	var alive := int(hunter_spawner.alive_count()) if hunter_spawner.has_method("alive_count") else 0
-	if early:
-		if alive > 0:
-			return
-		_hunter_early_refill_done = true
-		var w_early = hunter_spawner.spawn_wave(2)
-		_wire_hunter_kills(w_early)
-		if tribunal_hud and tribunal_hud.has_method("push_feed"):
-			tribunal_hud.push_feed("HUNTERS · pressure rising")
-		print("MeleeTest: hunters early refill=", w_early.size())
-		return
-	# Scheduled wave 2
-	_hunter_wave2_done = true
-	var n := 3 if alive == 0 else 2
-	var w2 = hunter_spawner.spawn_wave(n)
-	_wire_hunter_kills(w2)
+func _on_vs1_wave_started(wave_index: int, count: int) -> void:
 	if tribunal_hud and tribunal_hud.has_method("push_feed"):
-		tribunal_hud.push_feed("HUNTERS · wave 2")
-	print("MeleeTest: hunters wave2=", w2.size(), " (alive_before=", alive, ")")
+		tribunal_hud.push_feed("WAVE %d · %d hunters" % [wave_index + 1, count])
+
+
+func _on_vs1_wave_cleared(wave_index: int) -> void:
+	if tribunal_hud and tribunal_hud.has_method("push_feed"):
+		tribunal_hud.push_feed("WAVE %d CLEAR" % [wave_index + 1])
+
+
+func _on_vs1_reinforce(count: int) -> void:
+	if tribunal_hud and tribunal_hud.has_method("push_feed"):
+		tribunal_hud.push_feed("REINFORCE · +%d" % count)
+
+
+func _on_vs1_all_cleared() -> void:
+	if _match_ended_handled:
+		return
+	print("MeleeTest: VS-1 victory — all waves cleared")
+	if tribunal_hud and tribunal_hud.has_method("push_feed"):
+		tribunal_hud.push_feed("ALL WAVES CLEAR")
+	if arena_manager and arena_manager.has_method("declare_wave_victory"):
+		arena_manager.declare_wave_victory(player1)
 
 
 func _wire_hunter_kills(hunters: Array) -> void:
@@ -548,22 +547,8 @@ Judgement Chain: land hits → JUDGEMENT heavy  ·  R rematch  ·  G replay"""
 
 func _process(delta):
 	_update_status()
-	_tick_hunter_pressure(delta)
-
-
-func _tick_hunter_pressure(delta: float) -> void:
-	if _match_ended_handled or _round_frozen:
-		return
-	if arena_manager and "phase" in arena_manager and int(arena_manager.phase) != 1:
-		return
-	_fight_elapsed += delta
-	# Early refill when the field is cleared before the timed wave
-	if not _hunter_early_refill_done and not _hunter_wave2_done \
-			and _fight_elapsed >= hunter_early_refill_min \
-			and hunter_spawner and is_instance_valid(hunter_spawner) \
-			and hunter_spawner.has_method("alive_count") \
-			and int(hunter_spawner.alive_count()) == 0:
-		_try_hunter_wave2(true)
+	if not _match_ended_handled and not _round_frozen:
+		_fight_elapsed += delta
 
 
 func _update_status():
@@ -638,6 +623,8 @@ func _on_match_ended(winner):
 	_match_ended_handled = true
 	print("MATCH ENDED — Winner:", winner.name if winner else "Draw")
 	_set_fighters_frozen(true)
+	if wave_director and wave_director.has_method("stop"):
+		wave_director.stop()
 	_freeze_hunters()
 	if replay_system and replay_system.has_method("stop_recording"):
 		replay_system.stop_recording()

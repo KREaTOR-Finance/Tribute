@@ -18,6 +18,8 @@ var _wave_index: int = 0
 var _role_cursor: int = 0
 var _spawned: Array = []
 
+signal hunters_spawned(wave: Array)
+
 # Round-robin: RUSHER → BAITER → SCAVENGER (ints match HunterAI.Role)
 const ROLE_ORDER: Array = [0, 1, 2]
 
@@ -106,6 +108,7 @@ func spawn_wave(count: int = -1) -> Array:
 			" range=", h.attack_range
 		)
 	_wave_index += 1
+	hunters_spawned.emit(wave)
 	return wave
 
 

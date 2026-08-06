@@ -197,6 +197,22 @@ func _end_by_time() -> void:
 	_finish(best)
 
 
+## VS-1: humanoid wave gauntlet victory
+func declare_wave_victory(winner: Node = null) -> void:
+	if phase == Phase.ENDED:
+		return
+	_end_reason = "waves_cleared"
+	if winner == null:
+		# Prefer first alive human player
+		for p in players_alive:
+			if p != null and is_instance_valid(p) and p.is_in_group("players"):
+				winner = p
+				break
+		if winner == null and players_alive.size() > 0:
+			winner = players_alive[0]
+	_finish(winner)
+
+
 func _finish(winner: Node) -> void:
 	if phase == Phase.ENDED:
 		return
