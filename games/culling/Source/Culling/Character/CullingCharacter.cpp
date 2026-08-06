@@ -9,6 +9,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Culling.h"
@@ -39,11 +40,24 @@ ACullingCharacter::ACullingCharacter()
 	Combat = CreateDefaultSubobject<UCullingCombatComponent>(TEXT("Combat"));
 	Feedback = CreateDefaultSubobject<UCullingCombatFeedback>(TEXT("Feedback"));
 
+	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
+	BodyMesh->SetupAttachment(GetCapsuleComponent());
+	BodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BodyMesh->SetRelativeLocation(FVector(0.f, 0.f, -40.f));
+	BodyMesh->SetRelativeScale3D(FVector(0.65f, 0.65f, 1.55f));
+
 	WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
-	WeaponMesh->SetupAttachment(GetMesh() ? GetMesh() : GetRootComponent());
+	WeaponMesh->SetupAttachment(BodyMesh);
 	WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	WeaponMesh->SetRelativeLocation(FVector(40.f, 25.f, 40.f));
+	WeaponMesh->SetRelativeLocation(FVector(35.f, 20.f, 30.f));
 	WeaponMesh->SetRelativeRotation(FRotator(0.f, 0.f, 80.f));
+
+	TelegraphLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("TelegraphLight"));
+	TelegraphLight->SetupAttachment(GetCapsuleComponent());
+	TelegraphLight->SetRelativeLocation(FVector(0.f, 0.f, 90.f));
+	TelegraphLight->SetIntensity(0.f);
+	TelegraphLight->SetAttenuationRadius(280.f);
+	TelegraphLight->SetCastShadows(false);
 
 	// CDO defaults: weighty move/camera even before data asset assignment
 	GetCharacterMovement()->MaxWalkSpeed = 480.f;
@@ -61,6 +75,73 @@ void ACullingCharacter::BeginPlay()
 	ApplyMovementDefaults();
 	InitDefaultWeapons();
 	SelectWeaponSlot(1); // default sword — Culling mid tool fantasy
+
+	if (BodyMesh)
+	{
+		if (UStaticMesh* Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+		{
+			BodyMesh->SetStaticMesh(Sphere);
+		}
+		if (UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+		{
+			if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(BaseMat, this))
+			{
+				// Hunter blue-grey silhouette
+				MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.25f, 0.4f, 0.65f));
+				MID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.25f, 0.4f, 0.65f));
+				BodyMesh->SetMaterial(0, MID);
+			}
+		}
+	}
+
+	if (Combat)
+	{
+		Combat->OnMeleeStateChanged.AddDynamic(this, &ACullingCharacter::HandleMeleeStateChanged);
+		ApplyStateTelegraph(Combat->MeleeState);
+	}
+}
+
+void ACullingCharacter::HandleMeleeStateChanged(ECullingMeleeState NewState)
+{
+	ApplyStateTelegraph(NewState);
+}
+
+void ACullingCharacter::ApplyStateTelegraph(ECullingMeleeState NewState)
+{
+	if (!TelegraphLight)
+	{
+		return;
+	}
+
+	switch (NewState)
+	{
+	case ECullingMeleeState::HeavyWindup:
+		// Readable commit — warm charge light (punish window)
+		TelegraphLight->SetLightColor(FLinearColor(1.f, 0.45f, 0.05f));
+		TelegraphLight->SetIntensity(12000.f);
+		if (WeaponMesh)
+		{
+			WeaponMesh->SetRelativeScale3D(WeaponMesh->GetRelativeScale3D() * FVector(1.f, 1.f, 1.15f));
+		}
+		break;
+	case ECullingMeleeState::HeavyActive:
+	case ECullingMeleeState::LightActive:
+		TelegraphLight->SetLightColor(FLinearColor(1.f, 0.9f, 0.4f));
+		TelegraphLight->SetIntensity(6000.f);
+		break;
+	case ECullingMeleeState::Blocking:
+		TelegraphLight->SetLightColor(FLinearColor(0.3f, 0.55f, 1.f));
+		TelegraphLight->SetIntensity(4500.f);
+		break;
+	case ECullingMeleeState::Shoving:
+		TelegraphLight->SetLightColor(FLinearColor(0.9f, 0.9f, 1.f));
+		TelegraphLight->SetIntensity(5000.f);
+		break;
+	default:
+		TelegraphLight->SetIntensity(0.f);
+		RefreshWeaponVisual(); // restore weapon scale after windup boost
+		break;
+	}
 }
 
 void ACullingCharacter::InitDefaultWeapons()

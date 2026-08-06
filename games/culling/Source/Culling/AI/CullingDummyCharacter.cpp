@@ -75,6 +75,53 @@ void ACullingDummyCharacter::BeginPlay()
 
 	Tags.AddUnique(FName(TEXT("Dummy")));
 	Tags.AddUnique(FName(TEXT("Enemy")));
+
+	if (Combat)
+	{
+		Combat->OnMeleeStateChanged.AddDynamic(this, &ACullingDummyCharacter::HandleMeleeStateChanged);
+	}
+}
+
+void ACullingDummyCharacter::HandleMeleeStateChanged(ECullingMeleeState NewState)
+{
+	ApplyStateTelegraph(NewState);
+}
+
+void ACullingDummyCharacter::ApplyStateTelegraph(ECullingMeleeState NewState)
+{
+	if (!BodyMesh)
+	{
+		return;
+	}
+	// Scale + recolor body so heavy windup is readable even with MaxWalkSpeed 0
+	switch (NewState)
+	{
+	case ECullingMeleeState::HeavyWindup:
+		BodyMesh->SetRelativeScale3D(BodyBaseScale * FVector(1.25f, 1.25f, 1.05f));
+		if (UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(BodyMesh->GetMaterial(0)))
+		{
+			MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.f, 0.4f, 0.05f));
+			MID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(1.f, 0.4f, 0.05f));
+		}
+		break;
+	case ECullingMeleeState::HeavyActive:
+	case ECullingMeleeState::LightActive:
+		BodyMesh->SetRelativeScale3D(BodyBaseScale * FVector(1.1f, 1.1f, 1.f));
+		if (UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(BodyMesh->GetMaterial(0)))
+		{
+			MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.f, 0.2f, 0.05f));
+			MID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(1.f, 0.2f, 0.05f));
+		}
+		break;
+	default:
+		BodyMesh->SetRelativeScale3D(BodyBaseScale);
+		if (UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(BodyMesh->GetMaterial(0)))
+		{
+			MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.75f, 0.08f, 0.05f));
+			MID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.75f, 0.08f, 0.05f));
+		}
+		break;
+	}
 }
 
 void ACullingDummyCharacter::Tick(float DeltaSeconds)

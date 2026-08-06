@@ -25,19 +25,14 @@ void ACullingImpactFlash::Configure(float Radius, const FLinearColor& Color, flo
 	FlashColor = Color;
 	StartScale = (Radius / 100.f) * (bHeavy ? 0.35f : 0.22f);
 	EndScale = (Radius / 100.f) * (bHeavy ? 1.1f : 0.7f);
-	if (Light)
-	{
-		Light->SetLightColor(Color);
-		Light->SetIntensity(bHeavy ? 8000.f : 4000.f);
-	}
-}
+	SetActorScale3D(FVector(StartScale));
 
-void ACullingImpactFlash::BeginPlay()
-{
-	Super::BeginPlay();
-	if (UStaticMesh* Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+	if (!Mesh->GetStaticMesh())
 	{
-		Mesh->SetStaticMesh(Sphere);
+		if (UStaticMesh* Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+		{
+			Mesh->SetStaticMesh(Sphere);
+		}
 	}
 	if (UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
 	{
@@ -48,7 +43,25 @@ void ACullingImpactFlash::BeginPlay()
 			Mesh->SetMaterial(0, MID);
 		}
 	}
-	SetActorScale3D(FVector(StartScale));
+	if (Light)
+	{
+		Light->SetLightColor(Color);
+		Light->SetIntensity(bHeavy ? 8000.f : 4000.f);
+		StartLightIntensity = bHeavy ? 8000.f : 4000.f;
+	}
+}
+
+void ACullingImpactFlash::BeginPlay()
+{
+	Super::BeginPlay();
+	// Configure may run after SpawnActor BeginPlay — ensure mesh if Configure not yet called
+	if (Mesh && !Mesh->GetStaticMesh())
+	{
+		if (UStaticMesh* Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+		{
+			Mesh->SetStaticMesh(Sphere);
+		}
+	}
 }
 
 void ACullingImpactFlash::Tick(float DeltaSeconds)
@@ -60,7 +73,7 @@ void ACullingImpactFlash::Tick(float DeltaSeconds)
 	SetActorScale3D(FVector(S));
 	if (Light)
 	{
-		Light->SetIntensity(FMath::Lerp(Light->Intensity, 0.f, T));
+		Light->SetIntensity(FMath::Lerp(StartLightIntensity, 0.f, T));
 	}
 	if (Age >= Lifetime)
 	{

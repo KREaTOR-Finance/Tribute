@@ -3,8 +3,9 @@
 #include "Combat/CullingCombatFeedback.h"
 #include "Culling.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/World.h"
-#include "DrawDebugHelpers.h"
 
 UCullingCombatComponent::UCullingCombatComponent()
 {
@@ -217,7 +218,12 @@ bool UCullingCombatComponent::TryShove()
 	{
 		if (AActor* Other = Hit.GetActor())
 		{
-			if (UPrimitiveComponent* Root = Cast<UPrimitiveComponent>(Other->GetRootComponent()))
+			const FVector Launch = Owner->GetActorForwardVector() * WeaponProfile->ShoveImpulse * 0.35f + FVector(0.f, 0.f, 120.f);
+			if (ACharacter* OtherChar = Cast<ACharacter>(Other))
+			{
+				OtherChar->LaunchCharacter(Launch, true, true);
+			}
+			else if (UPrimitiveComponent* Root = Cast<UPrimitiveComponent>(Other->GetRootComponent()))
 			{
 				Root->AddImpulse(Owner->GetActorForwardVector() * WeaponProfile->ShoveImpulse, NAME_None, true);
 			}

@@ -31,5 +31,6 @@ protected:
 	float Lifetime = 0.12f;
 	float StartScale = 0.2f;
 	float EndScale = 0.8f;
+	float StartLightIntensity = 4000.f;
 	FLinearColor FlashColor = FLinearColor::White;
 };

@@ -2,9 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Combat/CullingCombatComponent.h"
 #include "CullingCharacter.generated.h"
 
-class UCullingCombatComponent;
 class UCullingCombatFeedback;
 class UCullingMovementDefaults;
 class USpringArmComponent;
@@ -42,6 +42,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Culling|Weapon")
 	TObjectPtr<class UStaticMeshComponent> WeaponMesh;
 
+	/** Player hunter silhouette (engine mesh). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Culling")
+	TObjectPtr<class UStaticMeshComponent> BodyMesh;
+
+	/** Readable heavy windup / block telegraph light. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Culling|Juice")
+	TObjectPtr<class UPointLightComponent> TelegraphLight;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Culling|Data")
 	TObjectPtr<UCullingMovementDefaults> MovementDefaults;
 
@@ -69,6 +77,11 @@ protected:
 	void InitDefaultWeapons();
 	void RefreshWeaponVisual();
 	void UpdateCombatMovementScalars();
+
+	UFUNCTION()
+	void HandleMeleeStateChanged(ECullingMeleeState NewState);
+
+	void ApplyStateTelegraph(ECullingMeleeState NewState);
 
 	UPROPERTY()
 	TArray<TObjectPtr<class UCullingWeaponProfile>> WeaponSlots;

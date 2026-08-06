@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Combat/CullingCombatComponent.h"
 #include "CullingDummyCharacter.generated.h"
 
 class UCullingCombatComponent;
@@ -50,10 +51,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Culling|AI")
 	void ResetDummy();
 
+	UFUNCTION()
+	void HandleMeleeStateChanged(ECullingMeleeState NewState);
+
 protected:
+	void ApplyStateTelegraph(ECullingMeleeState NewState);
+
 	float SparCountdown = 0.f;
 	float ResetCountdown = -1.f;
 	int32 SparStep = 0;
 	FVector SpawnLocation;
 	FRotator SpawnRotation;
+	FVector BodyBaseScale = FVector(0.7f, 0.7f, 1.6f);
 };
