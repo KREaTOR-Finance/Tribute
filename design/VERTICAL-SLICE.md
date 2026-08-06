@@ -1,40 +1,42 @@
-# Vertical Slice — Tribunal Melee Soul
+# Vertical Slice — Tribunal VS-1
 
 > **Product:** Tribunal · **Reference:** *The Culling* (feel only)
 
-## Goal
+## VS-1 LOCKED — Humanoid Wave Gauntlet
 
-Playable **MeleeTest** in UE5 that proves The Culling combat fantasy.
+**Players as humanoids battle waves of humanoid AI.**
 
-## In scope (COMPLETE for structure)
+Full specification: **`design/systems/SYS-AI-WAVES.md`** (found system + interpreted parameters).
 
-- [x] SYS-MOVE / SYS-MELEE / SYS-MAP / SYS-AI / SYS-JUICE / SYS-WEAPON / SYS-UI
-- [x] SYS-LOADOUT (perks 4/5/6)
-- [x] SYS-META (match stats + scavenger unlock)
-- [x] SYS-PERF (budget constants + logging)
-- [x] SYS-ASSETS (descriptions + Blender OBJ proxies)
-- [x] Integration telegraphs (heavy windup)
+### One sentence
 
-## Controls
+Solo (or local 2P assist) humanoid fighter clears escalating waves of humanoid hunter AI in a finished arena, or dies — full round with finish board.
 
-| Action | Key |
-|--------|-----|
-| Move/Look | WASD / Mouse |
-| Light / Heavy | LMB / RMB |
-| Block / Shove | Space / F |
-| Weapons | 1 Fist · 2 Sword · 3 Axe |
-| Perks | 4 Berserker · 5 Iron Lung · 6 Scavenger (unlock after kill) |
+### Playable fantasy (Culling-derived)
 
-## Exit criteria
+*The Culling* solo/bot play was **FFA-shaped contestants**, not zombie hordes.  
+Tribunal VS-1 **interprets** that as **waves of humanoid AI contestants** so solo play always has pressure.
 
-- [x] Critic PASS on core systems (structure)
-- [ ] Human PIE feel sign-off on GPU machine
-- [x] License ledger for proxies
-- [x] No mystery third-party packs
+### Must ship in VS-1
 
-## Sign-off
+| # | Requirement |
+|---|-------------|
+| 1 | Humanoid player mesh/rig |
+| 2 | Humanoid AI (same art family) |
+| 3 | Wave director: counts `[2,3,4,5]`, reinforce/clear rules per SYS-AI-WAVES |
+| 4 | Win = clear all waves · Lose = player elim |
+| 5 | Finish board + rematch |
+| 6 | Melee combat readable (Culling bar) |
 
-| Role | Date | Notes |
-|------|------|-------|
-| Gauntlet systems | 2026-08-05 | Structure complete |
-| Human feel | | PIE pending |
+### Not VS-1
+
+Full 16p net, full meta loadout, UE package, open world.
+
+### Prior checklist (superseded as *primary* slice)
+
+Earlier MeleeTest systems (scavenge, traps, zone) remain useful **support** but **VS-1 primary win condition is wave clear**, not hotseat FFA between two humans only.
+
+### Gauntlet
+
+- Builder implements VS-1; **never self-grades**  
+- Critic scores vs SYS-AI-WAVES + Culling contestant fantasy  

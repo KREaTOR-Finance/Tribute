@@ -5,7 +5,18 @@
 **Playable slice:** `games/tribunal` MeleeTest  
 **Ship module:** `games/culling` (UE; still branded Tribunal)  
 **Identity:** `design/PRODUCT.md`  
-**Updated:** 2026-08-06
+**Updated:** 2026-08-06  
+**Vertical slice locked:** **VS-1 Humanoid Wave Gauntlet** — `design/systems/SYS-AI-WAVES.md`
+
+## VS-1 (first vertical slice)
+
+| | |
+|--|--|
+| Fantasy | Humanoid player vs waves of humanoid AI (Culling contestant pressure) |
+| Spec | `design/systems/SYS-AI-WAVES.md` |
+| Status | IDENTIFIED + INTERPRETED · implementation next |
+| Win | Clear wave schedule `[2,3,4,5]` |
+| Lose | Player eliminated |
 
 ## Naming lock
 
