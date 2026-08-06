@@ -1,35 +1,35 @@
-# Vertical Slice Brief
+# Vertical Slice — Culling Melee Soul
 
 ## Goal
 
-Ship a **10–15 minute** playable path that proves the core loop is fun.
+A **playable MeleeTest** path that proves The Culling combat fantasy in UE5:
 
-## Must demonstrate
+- Two hunters (or player + dummy)
+- Light / heavy / block / shove + stamina + health
+- Weighty movement + readable third-person camera
+- Hit feedback hooks (even if placeholder audio/VFX)
+- Asset pipeline discipline (described assets)
 
-1. Core verb feels good (camera, control, feedback)
-2. One complete goal (start → challenge → resolution)
-3. Fail state + retry without soft-lock
-4. Art direction sample (not final polish everywhere)
-5. Licensed free assets only (ledger clean)
+## In scope
+
+- SYS-MOVE, SYS-MELEE, SYS-WEAPON (single sword profile), SYS-JUICE (minimal), SYS-UI (HP/STA), SYS-ASSETS (hunter + sword)
+- Tiny greybox arena (~20–40m)
+- Console budgets respected on paper
 
 ## Out of scope
 
-- Full campaign / multiplayer
-- Live service systems
-- Cinematic pipeline perfection
-- Platform certification
+- Full BR zone, 16-player netcode, progression meta, gunplay
 
 ## Exit criteria
 
-- [ ] Playable from packaged or PIE without console errors that block play
-- [ ] GDD core loop matches what ships
-- [ ] License ledger complete
-- [ ] Producer + designer sign-off recorded in this file
+- [ ] Critic PASS on SYS-MOVE and SYS-MELEE (runtime or honest structure + human PIE)
+- [ ] PIE: 30–60s fight feels intentional (human brake confirms feel)
+- [ ] Asset descriptions complete for used meshes
+- [ ] No mystery third-party assets without ledger
 
 ## Sign-off
 
-| Role | Name | Date | Notes |
-|------|------|------|-------|
-| Producer | | | |
-| Systems | | | |
-| Eng | | | |
+| Role | Date | Notes |
+|------|------|-------|
+| Human | | Brake / feel |
+| Gauntlet integration critic | | |

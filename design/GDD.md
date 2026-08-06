@@ -1,77 +1,98 @@
-# Game Design Document — First Title
+# Game Design Document — The Culling Spiritual Successor
 
-> **Status:** PLACEHOLDER — fill before mass production  
-> **Codename:** `first-title` (rename when locked)  
-> **Engine:** Unreal Engine 5.8+  
-> **Date:** 2026-08-05
+> **Codename:** Culling  
+> **Engine:** Unreal Engine 5.8+ (primary)  
+> **Studio:** ForgeStudio  
+> **Status:** Gauntlet active  
+> **Reference bar:** Original *The Culling* combat & movement soul + modern AAA polish/juice + console readiness  
+> **Legacy prototype:** `~/TheCullingGodot` (feel reference, not code port)
 
 ## Elevator pitch
 
-_One sentence. What does the player do, and why is it fun?_
+A **skill-based melee battle royale** where movement, timing, spacing, and read/react win fights — not spray, not third-person cover camping. Every duel should feel tense, readable, and earned.
 
-> TBD — commander to supply pitch.
+## Design pillars (locked)
 
-## Design pillars (max 3)
+1. **Melee identity is sacred** — Do not dilute into a generic gun BR. Tools and traps support melee; they never replace it.
+2. **Feel first** — Weight, windups, hitstop, stamina, camera — before maps, cosmetics, or live-ops.
+3. **Readable high stakes** — Clear silhouettes, clear telegraphs, clean juice; deaths feel fair.
 
-1. _Pillar A —_
-2. _Pillar B —_
-3. _Pillar C —_
+## Player fantasy
 
-## Target fantasy
+You are a hunter dropped into a lethal arena. Scavenge tools, set traps, control space, and win close-range fights through skill. Loadouts and perks matter; raw mechanical skill matters more.
 
-- **Player fantasy:**  
-- **Tone / aesthetic:** (e.g. grounded sci-fi, stylized fantasy, tactical noir)  
-- **Reference games:** (2–4 comps, not clones)
+## Reference bar (what “winning” means)
 
-## Core loop (60 seconds)
+| Dimension | Bar |
+|-----------|-----|
+| Combat | Original Culling: light/heavy commitment, block, shove, spacing |
+| Movement | Responsive but weighty; camera that sells impact |
+| Juice | Modern AAA hit feedback (hitstop, shake, audio, VFX) without muddying reads |
+| Systems | Loadouts/perks meaningful; scavenging risk/reward |
+| Polish | Console-ready budgets; no prototype jank in vertical slice |
+
+## Core loop (match)
 
 ```
-[Action] → [Reward] → [Choice] → [Action]
+Drop / spawn → Scavenge & position → Encounter (melee duel) → Loot / heal / reposition → Zone pressure → Final confrontations
 ```
 
-1.  
-2.  
-3.  
-4.  
+**60-second micro-loop (duel):**
 
-## Session length
+```
+Space & stamina manage → Commit (light/heavy) or bait → Hit/block/shove resolve → Juice + state change → Reset spacing
+```
 
-- First fun: **&lt; 5 min**
-- Typical session: **20–40 min**
-- Vertical slice goal: **10–15 min** playable path
+## Session targets
 
-## Systems (v0 scope)
+| Milestone | Goal |
+|-----------|------|
+| First fun | &lt; 2 min in MeleeTest |
+| Vertical slice | 10–15 min: warm-up arena + 1 scav route + 2–4 fighter encounter |
+| Full match fantasy | Later — after slice clears Gauntlet |
 
-| System | In slice? | Notes |
-|--------|-----------|-------|
-| Movement / camera | Yes | |
-| Primary verb | Yes | |
-| Fail / retry | Yes | |
-| Progression | Slice-light | |
-| Narrative | Optional | |
-| Multiplayer | No (default) | |
+## Systems inventory (Gauntlet pieces)
 
-## Content budget (slice)
+| ID | System | Slice priority |
+|----|--------|----------------|
+| SYS-MOVE | Movement & camera feel | **P0** |
+| SYS-MELEE | Core melee combat loop | **P0** |
+| SYS-WEAPON | Weapon / tool feel & timing | P0 |
+| SYS-LOADOUT | Abilities / perks / loadouts | P1 |
+| SYS-AI | Bot behavior (test dummies → hunters) | P0 test bots |
+| SYS-MAP | Map & zone systems | P1 (tiny arena first) |
+| SYS-UI | HUD readability | P0 minimal |
+| SYS-JUICE | VFX, audio, hit feedback | **P0** |
+| SYS-META | Progression / meta | P2 |
+| SYS-ASSETS | Asset descriptions + pipeline | **P0** |
+| SYS-PERF | Performance & console readiness | **P0 ongoing** |
 
-- 1 playable space (blockout → greybox → art pass)
-- 1 player kit
-- 2–3 enemy/obstacle types max
-- 1 music bed + few SFX
+## Non-goals (until Gauntlet clears P0)
 
-## Free-asset strategy
+- Full 16–60 player netcode shipping
+- Battle pass / live ops
+- Gun-meta primary combat
+- Open-world map size
 
-Prefer: Poly Haven (HDRI/textures), Kenney (prototyping), Quixel free where license allows, Epic Fab free, OpenGameArt/CC0 characters if style matches.  
-**All packs → `assets/licenses/LEDGER.md` before import.**
+## Controls (target — slice)
 
-## Open questions
+| Action | Default (PC) |
+|--------|----------------|
+| Move | WASD |
+| Look | Mouse |
+| Light | LMB |
+| Heavy (windup) | RMB hold |
+| Block | Space / RMB context TBD — **lock in slice**: Space block |
+| Shove | F |
+| Interact / scavenge | E |
+| Place trap | Q |
 
-- [ ] Genre locked?
-- [ ] Single-player only?
-- [ ] Stylized vs realistic?
-- [ ] Platform targets (PC first?)?
+## Data-driven rule
+
+Combat numbers, weapon profiles, perk defs live in data assets / tables — not buried only in Blueprint graphs — so Unreal iteration and future balancing stay clean.
 
 ## Change log
 
 | Date | Change |
 |------|--------|
-| 2026-08-05 | Scaffold created |
+| 2026-08-05 | Gauntlet launch: Culling identity locked, systems listed |

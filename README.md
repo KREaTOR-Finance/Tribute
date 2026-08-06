@@ -74,6 +74,28 @@ ForgeStudio/
   .grok/                    # project workflows / overrides
 ```
 
-## First title
+## First title — **Culling**
 
-Working codename lives in `design/GDD.md`. Fill pillars + core loop before asset spam.
+Spiritual successor to *The Culling* (melee-first skill BR).
+
+| Path | Purpose |
+|------|---------|
+| `games/culling/` | UE 5.8 project + C++ combat/move shells |
+| `games/culling/Content/Assets/` | Asset description system (describe before model) |
+| `design/gauntlet/` | Gauntlet Loop board + rules |
+| `design/systems/` | Per-system briefs (SYS-MOVE, SYS-MELEE, …) |
+
+### Commands
+
+```bash
+# Status
+./tools/scripts/army-status.sh
+
+# Gauntlet skill
+# /gauntlet-loop
+
+# Batch Builder→Critic on one system
+# /workflow gauntlet-culling  args: {"system":"SYS-MELEE","root":"/home/buidl/ForgeStudio","rounds":3}
+```
+
+Legacy Godot feel prototype (reference only): `~/TheCullingGodot`
