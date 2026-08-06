@@ -36,6 +36,9 @@ func _ready():
 		w1.weapon_type = Weapon.WeaponType.SWORD
 		w1._apply_profile()
 		player1.equip_weapon(w1)
+		if player1.has_method("_apply_weapon_skin_to_hand"):
+			player1.weapon_skin_id = "steel"
+			player1._apply_weapon_skin_to_hand()
 		if not player1.weapon_equipped.is_connected(_on_weapon_equipped.bind(player1, p1_weapon_label)):
 			player1.weapon_equipped.connect(_on_weapon_equipped.bind(player1, p1_weapon_label))
 		_sync_weapon_visual(player1, 1)
@@ -46,6 +49,9 @@ func _ready():
 		w2.weapon_type = Weapon.WeaponType.AXE
 		w2._apply_profile()
 		player2.equip_weapon(w2)
+		if player2.has_method("_apply_weapon_skin_to_hand"):
+			player2.weapon_skin_id = "bronze"
+			player2._apply_weapon_skin_to_hand()
 		if not player2.weapon_equipped.is_connected(_on_weapon_equipped.bind(player2, p2_weapon_label)):
 			player2.weapon_equipped.connect(_on_weapon_equipped.bind(player2, p2_weapon_label))
 		_sync_weapon_visual(player2, 2)
@@ -127,14 +133,12 @@ func _setup_ui():
 	if not ui_layer:
 		return
 	if instructions_label:
-		instructions_label.text = """TRIBUNAL — THE CULLING MIRROR
-Melee soul only. Local 2P hotseat.
+		instructions_label.text = """TRIBUNAL — CULLING MIRROR + SKINS
+P1: WASD+Mouse | LMB/RMB | Space/F | 1-3 weapons | [ ] cycle body/weapon skin
+P2: IJKL | U/O | P/; | 4-6 weapons | . cycle weapon skin
 
-P1 RED: WASD + Mouse | LMB Light | RMB Heavy windup | Space Block | F Shove | 1/2/3 Sword/Axe/Dagger
-P2 BLUE: IJKL | U Light | O Heavy | P Block | ; Shove | 4/5/6 weapons
-
-TAB follow cam · ESC mouse · Prove the loop before scope.
-Hitstop · knockback · particles · weapon profiles · PBR arena LIVE."""
+TAB cam · ESC mouse · R restart
+Skins: Crimson/Azure/Bone/Iron · Steel/Bloodsteel/Bronze/Bone/Obsidian"""
 	if not p1_weapon_label:
 		p1_weapon_label = Label.new()
 		p1_weapon_label.position = Vector2(20, 260)
@@ -180,7 +184,10 @@ func _sync_weapon_visual(player, wtype: int):
 	if hand:
 		var wv = hand.get_node_or_null("WeaponVisual")
 		if wv and wv.has_method("set_weapon_type"):
-			wv.set_weapon_type(wtype)
+			var skin := ""
+			if "weapon_skin_id" in player:
+				skin = str(player.weapon_skin_id)
+			wv.set_weapon_type(wtype, skin)
 
 
 func _on_player_died(player):

@@ -89,6 +89,12 @@ signal weapon_equipped(weapon_name: String)
 
 # Preload for particles (will be instantiated on hits)
 const HitParticlesScene = preload("res://scripts/HitParticles.tscn")
+const SkinCat = preload("res://scripts/SkinCatalog.gd")
+const CharSkinScript = preload("res://scripts/CharacterSkin.gd")
+
+var character_skin_id: String = ""
+var weapon_skin_id: String = ""
+var _char_skin = null
 
 # === HUMANNOID VISUAL HELPERS (humanoid-players-1) ===
 # Load the pre-generated low-poly humanoid glb at runtime and replace the capsule mesh.
@@ -191,6 +197,13 @@ func _ready():
 	base_heavy_cooldown = heavy_attack_cooldown
 
 	_load_humanoid_visual()
+	# Art skins (body rig + default weapon skin)
+	character_skin_id = SkinCat.default_character_skin(player_id)
+	weapon_skin_id = SkinCat.default_weapon_skin(1)
+	_char_skin = CharSkinScript.new()
+	add_child(_char_skin)
+	_char_skin.apply_to_player(self, character_skin_id)
+	_apply_weapon_skin_to_hand()
 
 	# Forward melee hitbox (Culling reach)
 	if melee_hitbox:
@@ -391,6 +404,10 @@ func _handle_combat_input(event):
 				_equip_test_weapon(Weapon.WeaponType.AXE)
 			elif event.keycode == KEY_3:
 				_equip_test_weapon(Weapon.WeaponType.DAGGER)
+			elif event.keycode == KEY_BRACKETLEFT:  # [
+				_cycle_character_skin()
+			elif event.keycode == KEY_BRACKETRIGHT:  # ]
+				_cycle_weapon_skin()
 	elif player_id == 2:
 		if event is InputEventKey and event.pressed:
 			if event.keycode == KEY_4:
@@ -399,13 +416,55 @@ func _handle_combat_input(event):
 				_equip_test_weapon(Weapon.WeaponType.AXE)
 			elif event.keycode == KEY_6:
 				_equip_test_weapon(Weapon.WeaponType.DAGGER)
+			elif event.keycode == KEY_APOSTROPHE:
+				_cycle_character_skin()
+			elif event.keycode == KEY_SEMICOLON:
+				# keep shove on ; for p2 — use KEY_PERIOD for weapon skin
+				pass
+			elif event.keycode == KEY_PERIOD:
+				_cycle_weapon_skin()
 
 func _equip_test_weapon(weapon_type: int):
 	var w = Weapon.new()
 	w.weapon_type = weapon_type
-	w._apply_profile()  # force apply
+	w._apply_profile()
 	equip_weapon(w)
-	# Note: In real game we would instance a proper scene with visuals
+	weapon_skin_id = SkinCat.default_weapon_skin(int(weapon_type) + 1)
+	_apply_weapon_skin_to_hand()
+
+
+func _apply_weapon_skin_to_hand() -> void:
+	var hand = get_node_or_null("Hand")
+	if hand == null:
+		return
+	var wv = hand.get_node_or_null("WeaponVisual")
+	if wv and wv.has_method("set_weapon_type"):
+		var wtype := 1
+		if current_weapon:
+			match current_weapon.weapon_type:
+				Weapon.WeaponType.AXE:
+					wtype = 2
+				Weapon.WeaponType.DAGGER:
+					wtype = 3
+				_:
+					wtype = 1
+		wv.set_weapon_type(wtype, weapon_skin_id)
+
+
+func _cycle_character_skin() -> void:
+	if _char_skin and _char_skin.has_method("cycle_skin"):
+		character_skin_id = _char_skin.cycle_skin(self)
+		print(name, " character skin -> ", character_skin_id)
+
+
+func _cycle_weapon_skin() -> void:
+	var hand = get_node_or_null("Hand")
+	if hand == null:
+		return
+	var wv = hand.get_node_or_null("WeaponVisual")
+	if wv and wv.has_method("cycle_skin"):
+		weapon_skin_id = wv.cycle_skin()
+		print(name, " weapon skin -> ", weapon_skin_id)
 
 func start_heavy_windup():
 	if not _can_act() or stamina < 25:
