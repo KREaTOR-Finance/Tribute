@@ -1,0 +1,142 @@
+[gd_scene load_steps=12 format=3 uid="uid://meleetest"]
+
+[ext_resource type="Script" path="res://scripts/MeleeTestScene.gd" id="1_test"]
+[ext_resource type="PackedScene" uid="uid://player" path="res://scenes/Player.tscn" id="2_player"]
+[ext_resource type="Script" path="res://scripts/ArenaManager.gd" id="3_arena"]
+[ext_resource type="Script" path="res://scripts/CameraShake.gd" id="4_shake"]
+[ext_resource type="PackedScene" uid="uid://hitparticles" path="res://scripts/HitParticles.tscn" id="5_particles"]
+[ext_resource type="Script" path="res://scripts/FollowCamera.gd" id="6_follow"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_test"]
+size = Vector3(20, 1, 20)
+
+[sub_resource type="BoxMesh" id="BoxMesh_test"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_crate"]
+size = Vector3(1.2, 1.2, 1.2)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_barrel"]
+height = 1.2
+top_radius = 0.5
+bottom_radius = 0.5
+
+[node name="MeleeTest" type="Node3D"]
+script = ExtResource("1_test")
+
+[node name="ArenaManager" type="Node" parent="."]
+script = ExtResource("3_arena")
+match_duration = 300.0
+
+[node name="Ground" type="StaticBody3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground"]
+shape = SubResource("BoxShape3D_test")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+mesh = SubResource("BoxMesh_test")
+
+[node name="Player1" parent="." instance=ExtResource("2_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 1, -4)
+player_id = 1
+
+[node name="Player2" parent="." instance=ExtResource("2_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 1, 4)
+player_id = 2
+
+# Note: Team colors (P1 red, P2 blue) are now applied automatically in PlayerController._load_humanoid_visual()
+# The old direct MeshInstance3D overrides for color have been removed because we load the shared glb model.
+
+# Arena cover props using real asset shapes (procedural glb can replace meshes later)
+[node name="Crate1" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.6, 2)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Crate1"]
+shape = SubResource("BoxShape3D_test")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Crate1"]
+mesh = SubResource("BoxMesh_crate")
+
+[node name="Barrel1" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 0.6, -3)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Barrel1"]
+shape = SubResource("BoxShape3D_test")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Barrel1"]
+mesh = SubResource("CylinderMesh_barrel")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.25, 0.433013, 0.353553, 0.866025, -0.353553, -0.353553, 0.433013, 0.829156, 0, 8, 0)
+shadow_enabled = true
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 8, 8)
+current = true
+script = ExtResource("6_follow")
+follow_distance = 7.0
+follow_height = 4.5
+follow_speed = 9.0
+
+[node name="CameraShake" type="Node" parent="Camera3D"]
+script = ExtResource("4_shake")
+decay_rate = 0.85
+max_offset = 0.3
+max_roll = 0.12
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="InstructionsLabel" type="Label" parent="UI"]
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 520.0
+offset_bottom = 180.0
+text = "MELEE FEEL TEST + LOCAL 2P HOTSEAT + WEAPONS + HUMANOIDS (ENHANCED)
+Player 1 (RED): WASD + Mouse | LMB=Light Jab | RMB=Heavy | Space=Block | F=Shove
+Player 2 (BLUE): IJKL + Mouse | U=Light | O=Heavy | P=Block | ;=Shove
+
+WEAPON SWAP (test profiles live):
+P1: 1=Sword (balanced) | 2=Axe (heavy knockback) | 3=Dagger (fast light)
+P2: 4=Sword | 5=Axe | 6=Dagger
+
+Focus: Prove the core loop feels incredible here first.
+Knockback, hit particles, improved reactions + tweens + real humanoid bodies are LIVE.
+Press TAB to toggle fixed cam <-> follow cam on P1 (better melee feel).
+Tweak @export values on Player1/Player2 in the inspector while the game runs!
+Real CC0 .glb assets + procedural stand-ins are in assets/. WeaponVisual + HumanoidVisual swap live."
+autowrap_mode = 2
+
+[node name="P1Status" type="Label" parent="UI"]
+offset_left = 20.0
+offset_top = 200.0
+offset_right = 220.0
+offset_bottom = 230.0
+text = "P1 HP: 100  STA: 100"
+modulate = Color(1, 0.4, 0.4, 1)
+
+[node name="P1Weapon" type="Label" parent="UI"]
+offset_left = 20.0
+offset_top = 260.0
+offset_right = 320.0
+offset_bottom = 290.0
+text = "P1 Weapon: Sword"
+modulate = Color(1, 0.4, 0.4, 1)
+
+[node name="P2Status" type="Label" parent="UI"]
+offset_left = 20.0
+offset_top = 230.0
+offset_right = 220.0
+offset_bottom = 260.0
+text = "P2 HP: 100  STA: 100"
+modulate = Color(0.4, 0.6, 1, 1)
+
+[node name="P2Weapon" type="Label" parent="UI"]
+offset_left = 20.0
+offset_top = 285.0
+offset_right = 320.0
+offset_bottom = 315.0
+text = "P2 Weapon: Axe"
+modulate = Color(0.4, 0.6, 1, 1)
+
+[editable path="Player1"]
+[editable path="Player2"]

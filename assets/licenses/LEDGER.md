@@ -13,3 +13,5 @@ Every free or third-party pack used in the project **must** have a row here befo
 2. Copy license text into `assets/licenses/texts/<pack-id>.txt` if not in pack
 3. Add a ledger row
 4. Only then import to Unreal Content
+
+| polyhaven-pbr-hdri | Poly Haven | `assets/free/polyhaven/` | CC0 | Yes | https://polyhaven.com | 2026-08-05 | rock/wood/metal + HDRI for Tribunal demo |

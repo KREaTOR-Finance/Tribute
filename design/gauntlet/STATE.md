@@ -1,29 +1,20 @@
-# Gauntlet State Board — Tribune
+# Gauntlet State — Tribunal
 
-**COMPLETE** (greybox MeleeTest structure) — 2026-08-05  
-**Product:** Tribune · **Reference:** The Culling · **Repo:** https://github.com/KREaTOR-Finance/Tribute
+**Product:** Tribunal  
+**Reference:** The Culling  
+**Playable:** `games/tribunal` via `dist/run-tribunal.sh`  
+**Updated:** 2026-08-06
 
-## Systems
+## Delivery surfaces
 
-| ID | Status | Notes |
-|----|--------|-------|
-| SYS-MOVE | **PASS** | Weighty move/camera + possession |
-| SYS-MELEE | **PASS** | Full FSM + stamina |
-| SYS-MAP | **PASS** | Procedural MeleeTest arena |
-| SYS-AI | **PASS** | Dummy spar + telegraphs + reset |
-| SYS-JUICE | **PASS** | Local hitstop + ImpactFlash |
-| SYS-WEAPON | **PASS** | Fist/sword/axe + visuals |
-| SYS-UI | **PASS** | Pure C++ UMG vitals |
-| SYS-LOADOUT | **PASS** | Berserker/IronLung/Scavenger |
-| SYS-META | **PASS** | Honest kill credit (no corpse farm) |
-| SYS-PERF | **PASS*** | Budgets dual + operational clamps (*fixed ClampedFlashTime) |
-| SYS-ASSETS | **PASS** | Descriptions + Blender OBJ proxies + LEDGER |
-| SYS-INTEG | **PASS** | Final integration critic PASS |
+| Surface | Status |
+|---------|--------|
+| Godot playable demo + tutorial + hunt | SHIPPED (headless boot clean of script errors) |
+| Poly Haven production textures/HDRI | SHIPPED CC0 |
+| UE C++ systems (games/culling) | SHIPPED structure |
+| Packaged .x86_64 single binary | PENDING export (templates present; pack step long) |
 
-## Human PIE remaining
+## Critic note
 
-Feel A/B vs shipping Culling requires GPU UE session — not a missing system.
-
-## Brake
-
-Whole structure complete. Further work is art/net polish or human feel tuning.
+Masterpiece feel vs AAA Culling still requires skeletal art + GPU PIE.  
+Playable shareable demo loop is complete for overnight delivery.

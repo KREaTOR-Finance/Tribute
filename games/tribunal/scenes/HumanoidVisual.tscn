@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://humanoidvisual"]
+
+[ext_resource type="Script" path="res://scripts/HumanoidVisual.gd" id="1_humanoid"]
+
+[node name="HumanoidVisual" type="Node3D"]
+script = ExtResource("1_humanoid")
+team_color = Color(1, 0.4, 0.4, 1)

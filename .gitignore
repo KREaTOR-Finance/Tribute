@@ -45,3 +45,5 @@ node_modules/
 
 # MCP local dumps
 **/mcp-debug/
+games/tribunal/.godot/
+*.tpz

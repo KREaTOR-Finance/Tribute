@@ -1,109 +1,31 @@
-# Tribune
+# Tribunal
 
-**Spiritual successor to *The Culling*** — skill-based melee battle royale (**Tribune**), built with a Gauntlet Loop agent army on Unreal Engine 5 + Blender.
+**Spiritual successor to *The Culling*** — skill-based melee battle royale.
 
-| | |
-|--|--|
-| **Product** | Tribune |
+| Surface | Path |
+|---------|------|
+| **Playable demo (Godot 4.3)** | `games/tribunal/` · launcher `dist/run-tribunal.sh` |
+| **Unreal 5 production module** | `games/culling/` (`Culling.uproject`) |
 | **GitHub** | https://github.com/KREaTOR-Finance/Tribute |
-| **Engine** | Unreal Engine 5.8+ (`games/culling/` module path) |
-| **Method** | Gauntlet Loop (`/gauntlet-loop`) — independent builders + blind critics |
-| **Studio root** | This repo (ForgeStudio layout) |
+| **Method** | Gauntlet Loop (builder ≠ critic) |
 
-This repo is both:
-1. **Command HQ** — agent platoon, design, assets, Gauntlet board
-2. **Game workspace** — `games/culling/` (UE project; shipping name **Tribune**)
-
-## Stack
-
-| Layer | Tool |
-|-------|------|
-| Engine | Unreal Engine **5.8+** (MCP plugin: Unreal MCP + All Toolsets) |
-| 3D DCC | **Blender 4.x** via [blender-mcp](https://github.com/ahujasid/blender-mcp) |
-| Assets | Free marketplaces (Epic Fab free, Quixel/Megascans free tier, OpenGameArt, Kenney, Poly Haven, Sketchfab CC0) |
-| Agent runtime | Grok Build (`~/.grok` army + project `.grok/`) |
-
-## Machine notes
-
-- **Blender** is available on this host (`blender` CLI).
-- **Unreal Editor** may run on a workstation with more RAM/GPU. MCP is loopback HTTP (`http://127.0.0.1:8000/mcp`) — agent CLI must share that machine or tunnel carefully (local only; no auth).
-- This Linux box has ~7–8 GB RAM; full UE5 editor is tight. Prefer a 16 GB+ GPU machine for editor sessions.
-
-## Quick start
+## Play now
 
 ```bash
 cd ~/ForgeStudio
-
-# 1) Read the army playbook
-#    /game-ops-army   (or open ~/.grok/skills/game-ops-army/SKILL.md)
-
-# 2) Blender MCP (with Blender open + addon enabled)
-#    See docs/MCP-SETUP.md
-
-# 3) Unreal MCP (UE 5.8+ editor, plugins enabled)
-#    Auto Start Server → http://127.0.0.1:8000/mcp
-#    Console: ModelContextProtocol.GenerateClientConfig All
-
-# 4) Launch a platoon
-#    /workflow game-studio-platoon  { "mission": "...", "root": "." }
-#    /workflow vertical-slice       { "slice": "...", "root": "." }
-#    /workflow asset-pipeline       { "brief": "...", "root": "." }
+./dist/run-tribunal.sh
 ```
 
-## Army (roles)
+Requires Godot 4.3 (`~/tools/Godot_v4.3-stable_linux.x86_64` on this machine).
 
-| Agent | Job |
-|-------|-----|
-| `game-producer` | Mission brief, scope, acceptance, sequencing |
-| `game-systems-designer` | GDD, loops, economy, balance |
-| `narrative-designer` | Story, VO briefs, quests, tone |
-| `unreal-engineer` | UE5 C++/Blueprints, systems, MCP-driven editor work |
-| `blender-artist` | Model / UV / rig / export via Blender MCP |
-| `technical-artist` | Materials, LODs, VFX, performance budgets |
-| `level-designer` | Blockout, flow, encounters, lighting intent |
-| `asset-quartermaster` | Free asset sourcing, license ledger, import standards |
-| `qa-tester` | Playtest plans, automation, regression |
-| `code-reviewer` / `security-auditor` | Code quality & threat model |
+## Demo loop
 
-## Repo layout
+Title → Tutorial (move/light/heavy/block/loot) → Hunt (AI hunters + zone + traps) → Victory/Defeat.
 
-```
-ForgeStudio/
-  AGENTS.md                 # Rules for every agent
-  docs/                     # MCP setup, free asset playbook
-  design/                   # GDD, pillars, vertical-slice brief
-  assets/
-    source/                 # Blender .blend masters
-    imported/               # Engine-ready FBX/glTF/textures
-    free/                   # Downloaded free packs (gitignored bulk)
-    licenses/               # LICENSE ledger per pack
-  games/first-title/        # UE project root (once created in editor)
-  tools/                    # scripts, MCP helpers
-  .grok/                    # project workflows / overrides
-```
+## Assets
 
-## First title — **Culling**
+Poly Haven **CC0** PBR + HDRI under `assets/free/polyhaven/` (ledgered).
 
-Spiritual successor to *The Culling* (melee-first skill BR).
+## Unreal
 
-| Path | Purpose |
-|------|---------|
-| `games/culling/` | UE 5.8 project + C++ combat/move shells |
-| `games/culling/Content/Assets/` | Asset description system (describe before model) |
-| `design/gauntlet/` | Gauntlet Loop board + rules |
-| `design/systems/` | Per-system briefs (SYS-MOVE, SYS-MELEE, …) |
-
-### Commands
-
-```bash
-# Status
-./tools/scripts/army-status.sh
-
-# Gauntlet skill
-# /gauntlet-loop
-
-# Batch Builder→Critic on one system
-# /workflow gauntlet-culling  args: {"system":"SYS-MELEE","root":"/home/buidl/ForgeStudio","rounds":3}
-```
-
-Legacy Godot feel prototype (reference only): `~/TheCullingGodot`
+Open `games/culling/Culling.uproject` on GPU UE 5.8+ for C++ systems port / ship path.
