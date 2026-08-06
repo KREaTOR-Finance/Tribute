@@ -31,11 +31,17 @@ func _process(delta: float):
 		pass
 
 func register_player(player: PlayerController):
+	if player == null or player in players:
+		return
 	players.append(player)
 	players_alive.append(player)
-	player.player_died.connect(_on_player_died)
+	# player_died has no args — bind the player ref
+	if not player.player_died.is_connected(_on_player_died.bind(player)):
+		player.player_died.connect(_on_player_died.bind(player))
 
 func _on_player_died(player: PlayerController):
+	if player == null:
+		return
 	players_alive.erase(player)
 	player_eliminated.emit(player)
 	

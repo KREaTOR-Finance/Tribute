@@ -1,55 +1,35 @@
-# Tribunal — Playable Demo
+# Tribunal — The Culling Mirror
 
-**Spiritual successor to *The Culling*** — skill-based melee arena with tutorial, scavening, hunters, zone, traps.
+Main scene: **MeleeTest** (same spine as The Culling Godot prototype).
 
-## Quick play (Linux)
+## Run
 
 ```bash
-# Option A — launcher (requires Godot 4.3 binary once)
-./run-tribunal.sh
-
-# Option B — direct
-$HOME/tools/Godot_v4.3-stable_linux.x86_64 --path ../games/tribunal
+cd ~/ForgeStudio
+./dist/run-tribunal.sh
 ```
 
-Project path: `games/tribunal/`
+## Culling controls (mirrored)
 
-## Controls
+| | P1 | P2 |
+|--|----|----|
+| Move | WASD + mouse | IJKL |
+| Light | LMB | U |
+| Heavy windup | RMB | O |
+| Block | Space | P |
+| Shove | F | ; |
+| Weapons | 1 Sword · 2 Axe · 3 Dagger | 4/5/6 |
 
-| Input | Action |
-|-------|--------|
-| WASD | Move |
-| Mouse | Look |
-| LMB | Light attack |
-| RMB | Heavy (windup commit) |
-| Space | Block |
-| F | Shove |
-| 1 / 2 / 3 | Fist / Sword / Axe |
-| Q | Place trap (hunt phase) |
-| E | Finish tutorial → hunt |
-| Enter | Start / replay |
-| Esc | Toggle mouse |
+ESC mouse · TAB swap follow cam · R restart
 
-## Demo flow
+## What is live
 
-1. **Title** — TRIBUNAL
-2. **Tutorial** — move, light, heavy, block/shove, loot
-3. **The Hunt** — 4 AI hunters, shrinking zone, traps
-4. **Victory / Defeat** — Enter to restart
+- PlayerController Culling melee soul (hitstop, knockback, particles, stamina)
+- 2P hotseat in MeleeTest arena
+- Weapon profiles + WeaponVisual
+- Poly Haven PBR ground/crates/barrels + HDRI
+- Team-colored bodies (red/blue)
 
-## Assets
+## Unreal
 
-- **Poly Haven CC0** PBR (rock, wood, metal) + HDRI sky  
-  License: https://polyhaven.com/license  
-  Ledger: `assets/licenses/LEDGER.md`
-- Runtime procedural characters (production mesh swap path ready)
-
-## Unreal path
-
-Production C++ UE project remains under `games/culling/` (module name legacy).  
-Open `Culling.uproject` on a GPU workstation with UE 5.8+.
-
-## Honest quality bar
-
-This demo is a **complete playable loop** with production **textures** and Culling-soul combat verbs.  
-Full skeletal cinematic mesh quality = continue art pipeline (Blender MCP + UE import) on a GPU machine.
+`games/culling/Culling.uproject` on GPU UE 5.8+

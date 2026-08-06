@@ -96,76 +96,105 @@ func _find_mesh_in_scene(node: Node) -> MeshInstance3D:
 			return result
 	return null
 
+func _team_color() -> Color:
+	return Color(0.22, 0.45, 0.95) if player_id == 2 else Color(0.9, 0.18, 0.15)
+
+
+func _apply_body_material(mi: MeshInstance3D, color: Color) -> void:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.55
+	mat.metallic = 0.12
+	mi.material_override = mat
+
+
+func _build_culling_body() -> void:
+	## Reliable Culling-style low-poly body when glb imports are unavailable.
+	if not mesh_instance:
+		return
+	var body := CapsuleMesh.new()
+	body.radius = 0.38
+	body.height = 1.35
+	mesh_instance.mesh = body
+	mesh_instance.position = Vector3(0, 0.95, 0)
+	mesh_instance.scale = Vector3.ONE
+	_apply_body_material(mesh_instance, _team_color())
+	# Head
+	var head := MeshInstance3D.new()
+	head.name = "Head"
+	var hs := SphereMesh.new()
+	hs.radius = 0.22
+	head.mesh = hs
+	head.position = Vector3(0, 1.85, 0)
+	_apply_body_material(head, _team_color().lightened(0.15))
+	add_child(head)
+	print("Culling body built for ", name)
+
+
 func _load_humanoid_visual():
 	if not mesh_instance:
 		return
-
-	# Use colored variants for instant team distinction (P1 red, P2 blue)
 	var glb_path = "res://assets/models/characters/lowpoly_humanoid_red.glb"
 	if player_id == 2:
 		glb_path = "res://assets/models/characters/lowpoly_humanoid_blue.glb"
-
-	var humanoid_res = load(glb_path)
-	if humanoid_res == null:
+	var humanoid_res = null
+	if ResourceLoader.exists(glb_path):
+		humanoid_res = load(glb_path)
+	if humanoid_res == null and ResourceLoader.exists("res://assets/models/characters/lowpoly_humanoid.glb"):
 		humanoid_res = load("res://assets/models/characters/lowpoly_humanoid.glb")
-
 	if humanoid_res is PackedScene:
 		var inst = humanoid_res.instantiate()
 		var found = _find_mesh_in_scene(inst)
 		if found and found.mesh:
 			mesh_instance.mesh = found.mesh
-			# Offset so the model's feet align with the character's origin
-			# (model y starts around 0.33 in the exported glb)
 			mesh_instance.position = Vector3(0, -0.32, 0)
 			mesh_instance.scale = Vector3(0.92, 0.92, 0.92)
+			_apply_body_material(mesh_instance, _team_color())
+			inst.queue_free()
+			print("Humanoid glb loaded for ", name)
+			return
 		inst.queue_free()
-		print("Humanoid visual loaded for ", name, " (", glb_path, ")")
-	else:
-		print("WARNING: humanoid glb not found or not PackedScene — falling back to capsule for ", name)
+	_build_culling_body()
+
 
 func _ready():
+	add_to_group("players")
+	add_to_group("damageable")
 	mesh_instance = $MeshInstance3D
 	melee_hitbox = $MeleeHitbox
-	camera = $Camera3D
+	camera = get_node_or_null("Camera3D")
 
-	# Attach camera shake if available
 	if has_node("CameraShake"):
 		camera_shake = $CameraShake
 	else:
-		# Try to find it in the parent test scene (shared camera case)
 		var parent = get_parent()
 		if parent and parent.has_node("CameraShake"):
 			camera_shake = parent.get_node("CameraShake")
 
 	health = max_health
 	stamina = max_stamina
-
-	# Store base values before any weapon
 	base_light_damage = light_attack_damage
 	base_light_cooldown = light_attack_cooldown
 	base_heavy_damage = heavy_attack_damage
 	base_heavy_windup = heavy_attack_windup
 	base_heavy_cooldown = heavy_attack_cooldown
 
-	# === HUMANNOID VISUAL (replaces capsule with proper low-poly humanoid) ===
 	_load_humanoid_visual()
 
-	# Apply team color (P1 red, P2 blue) — applied after loading the glb
-	if mesh_instance:
-		if player_id == 2:
-			mesh_instance.modulate = Color(0.85, 0.9, 1.1, 1.0)  # slight blue boost for P2
-		else:
-			mesh_instance.modulate = Color(1.1, 0.85, 0.85, 1.0)  # slight red boost for P1
-
-	# Connect hitbox (once only)
+	# Forward melee hitbox (Culling reach)
 	if melee_hitbox:
-		melee_hitbox.body_entered.connect(_on_melee_hit)
-
-	print(name, " ready (Player ", player_id, ") — humanoid visual loaded")
-
-	# Make hitbox start disabled
-	if melee_hitbox:
+		melee_hitbox.position = Vector3(0, 1.0, -1.1)
+		var hb_shape = melee_hitbox.get_node_or_null("CollisionShape3D")
+		if hb_shape and hb_shape.shape is CapsuleShape3D:
+			var cap := hb_shape.shape as CapsuleShape3D
+			cap.radius = 0.55
+			cap.height = 1.2
+		if not melee_hitbox.body_entered.is_connected(_on_melee_hit):
+			melee_hitbox.body_entered.connect(_on_melee_hit)
 		melee_hitbox.monitoring = false
+		melee_hitbox.collision_mask = 0xFFFFFFFF
+
+	print(name, " ready (Player ", player_id, ") — Culling melee soul")
 
 func equip_weapon(weapon: Weapon):
 	if not weapon:
@@ -200,6 +229,20 @@ func unequip_weapon():
 		weapon_equipped.emit("None")
 		print(name, " unequipped weapon")
 
+var _mouse_yaw: float = 0.0
+var _mouse_pitch: float = 0.0
+const MOUSE_SENS := 0.0025
+
+
+func _unhandled_input(event):
+	# Mouse look (Culling third-person / free look for melee spacing)
+	if player_id == 1 and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		_mouse_yaw -= event.relative.x * MOUSE_SENS
+		_mouse_pitch = clampf(_mouse_pitch - event.relative.y * MOUSE_SENS, deg_to_rad(-50), deg_to_rad(30))
+		rotation.y = _mouse_yaw
+	_handle_combat_input(event)
+
+
 func _physics_process(delta: float):
 	# Gravity
 	if not is_on_floor():
@@ -207,11 +250,12 @@ func _physics_process(delta: float):
 
 	# Movement input (supports player 1 + player 2 hotseat keys)
 	var input_dir = _get_movement_input()
+	var speed_mul := 0.55 if is_blocking else (0.4 if is_winding_heavy else 1.0)
 	var direction = (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
 
 	if direction:
-		velocity.x = move_toward(velocity.x, direction.x * move_speed, acceleration * delta)
-		velocity.z = move_toward(velocity.z, direction.z * move_speed, acceleration * delta)
+		velocity.x = move_toward(velocity.x, direction.x * move_speed * speed_mul, acceleration * delta)
+		velocity.z = move_toward(velocity.z, direction.z * move_speed * speed_mul, acceleration * delta)
 	else:
 		velocity.x = move_toward(velocity.x, 0, friction * delta)
 		velocity.z = move_toward(velocity.z, 0, friction * delta)
@@ -256,20 +300,18 @@ func _get_movement_input() -> Vector2:
 
 	return input
 
-func _unhandled_input(event):
-	if attack_cooldown_timer > 0:
-		return
+func _handle_combat_input(event):
+	if attack_cooldown_timer > 0 and not (event.is_action_released("block") or event.is_action_released("p2_block")):
+		# still allow block release / weapon swap while recovering
+		pass
 
 	# Light attack
-	if (player_id == 1 and event.is_action_pressed("light_attack")) or (player_id == 2 and event.is_action_pressed("p2_light_attack")):
-		_perform_light_attack()
-
-	# Heavy attack (start windup)
-	if (player_id == 1 and event.is_action_pressed("heavy_attack")) or (player_id == 2 and event.is_action_pressed("p2_heavy_attack")):
-		if stamina >= 25:
-			start_heavy_windup()
-		else:
-			print("Not enough stamina for heavy!")
+	if attack_cooldown_timer <= 0:
+		if (player_id == 1 and event.is_action_pressed("light_attack")) or (player_id == 2 and event.is_action_pressed("p2_light_attack")):
+			_perform_light_attack()
+		if (player_id == 1 and event.is_action_pressed("heavy_attack")) or (player_id == 2 and event.is_action_pressed("p2_heavy_attack")):
+			if stamina >= 25:
+				start_heavy_windup()
 
 	# Block
 	if (player_id == 1 and event.is_action_pressed("block")) or (player_id == 2 and event.is_action_pressed("p2_block")):
@@ -278,25 +320,27 @@ func _unhandled_input(event):
 		end_block()
 
 	# Shove
-	if (player_id == 1 and event.is_action_pressed("shove")) or (player_id == 2 and event.is_action_pressed("p2_shove")):
-		_perform_shove()
+	if attack_cooldown_timer <= 0:
+		if (player_id == 1 and event.is_action_pressed("shove")) or (player_id == 2 and event.is_action_pressed("p2_shove")):
+			_perform_shove()
 
-	# === WEAPON SWAP FOR TESTING (melee focus) ===
-	# 1 = Sword, 2 = Axe, 3 = Dagger (local test only)
+	# Weapon swap (Culling tool fantasy)
 	if player_id == 1:
-		if event.is_action_pressed("ui_1"):
-			_equip_test_weapon(Weapon.WeaponType.SWORD)
-		elif event.is_action_pressed("ui_2"):
-			_equip_test_weapon(Weapon.WeaponType.AXE)
-		elif event.is_action_pressed("ui_3"):
-			_equip_test_weapon(Weapon.WeaponType.DAGGER)
+		if event is InputEventKey and event.pressed:
+			if event.keycode == KEY_1:
+				_equip_test_weapon(Weapon.WeaponType.SWORD)
+			elif event.keycode == KEY_2:
+				_equip_test_weapon(Weapon.WeaponType.AXE)
+			elif event.keycode == KEY_3:
+				_equip_test_weapon(Weapon.WeaponType.DAGGER)
 	elif player_id == 2:
-		if event.is_action_pressed("ui_4"):
-			_equip_test_weapon(Weapon.WeaponType.SWORD)
-		elif event.is_action_pressed("ui_5"):
-			_equip_test_weapon(Weapon.WeaponType.AXE)
-		elif event.is_action_pressed("ui_6"):
-			_equip_test_weapon(Weapon.WeaponType.DAGGER)
+		if event is InputEventKey and event.pressed:
+			if event.keycode == KEY_4:
+				_equip_test_weapon(Weapon.WeaponType.SWORD)
+			elif event.keycode == KEY_5:
+				_equip_test_weapon(Weapon.WeaponType.AXE)
+			elif event.keycode == KEY_6:
+				_equip_test_weapon(Weapon.WeaponType.DAGGER)
 
 func _equip_test_weapon(weapon_type: int):
 	var w = Weapon.new()
@@ -327,14 +371,15 @@ func _perform_heavy_attack():
 	if melee_hitbox:
 		melee_hitbox.monitoring = true
 
-	# Visual windup release feedback
 	if mesh_instance:
 		var tween = create_tween()
 		tween.tween_property(mesh_instance, "scale", Vector3(1.15, 0.85, 1.15), 0.08)
 		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.18)
 		tween.parallel().tween_property(mesh_instance, "rotation_degrees:y", 0.0, 0.2)
 
-	await get_tree().create_timer(0.12).timeout  # active frames
+	await get_tree().create_timer(0.08).timeout
+	_melee_shape_query(true)
+	await get_tree().create_timer(0.08).timeout
 
 	if melee_hitbox:
 		melee_hitbox.monitoring = false
@@ -342,22 +387,42 @@ func _perform_heavy_attack():
 	attack_cooldown_timer = heavy_attack_cooldown
 	print(name, " heavy attack released!")
 
+func _melee_shape_query(heavy: bool) -> void:
+	## Reliable hit detect (Culling: hits must land) — complements Area hitbox
+	var space := get_world_3d().direct_space_state
+	var q := PhysicsShapeQueryParameters3D.new()
+	var sphere := SphereShape3D.new()
+	sphere.radius = 0.7 if heavy else 0.55
+	q.shape = sphere
+	var reach := 1.6 if heavy else 1.35
+	q.transform = Transform3D(Basis(), global_position + Vector3(0, 1.0, 0) + (-global_transform.basis.z) * reach)
+	q.exclude = [get_rid()]
+	q.collision_mask = 0xFFFFFFFF
+	for h in space.intersect_shape(q, 12):
+		var col = h.get("collider")
+		if col and col is CharacterBody3D:
+			_on_melee_hit(col)
+
+
 func _perform_light_attack():
 	if is_winding_heavy:
 		return
+	if stamina < 6:
+		return
+	stamina -= 6
+	stamina_changed.emit(stamina)
 
 	if melee_hitbox:
 		melee_hitbox.monitoring = true
 
-	# Snappy jab animation + slight forward lean
 	if mesh_instance:
 		var tween = create_tween()
 		tween.tween_property(mesh_instance, "scale", Vector3(1.08, 1.08, 1.08), 0.03)
 		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.1)
-		tween.parallel().tween_property(mesh_instance, "position:z", -0.3, 0.02)  # slight lunge
-		tween.tween_property(mesh_instance, "position:z", 0.0, 0.1)
 
-	await get_tree().create_timer(0.08).timeout
+	await get_tree().create_timer(0.06).timeout
+	_melee_shape_query(false)
+	await get_tree().create_timer(0.04).timeout
 
 	if melee_hitbox:
 		melee_hitbox.monitoring = false
@@ -497,15 +562,19 @@ func take_damage(amount: int, attacker: Node):
 		
 		velocity += push_dir * knockback_force + Vector3(0, 2.5, 0)  # slight upward pop
 
-	# Improved hit reaction tween (flinch + color flash already present, enhanced)
 	if mesh_instance:
-		var original_color = mesh_instance.modulate
-		mesh_instance.modulate = Color(1, 0.2, 0.2)
-		
 		var tween = create_tween()
 		tween.tween_property(mesh_instance, "scale", Vector3(0.9, 1.15, 0.9), hit_reaction_duration * 0.4)
 		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), hit_reaction_duration * 0.6)
-		tween.parallel().tween_property(mesh_instance, "modulate", original_color, 0.25)
+		if mesh_instance.material_override is StandardMaterial3D:
+			var mat: StandardMaterial3D = mesh_instance.material_override
+			mat.emission_enabled = true
+			mat.emission = Color(1, 0.15, 0.1)
+			mat.emission_energy_multiplier = 4.0
+			get_tree().create_timer(0.12).timeout.connect(func ():
+				if is_instance_valid(mat):
+					mat.emission_energy_multiplier = 0.0
+			)
 
 	if health <= 0:
 		die(attacker)

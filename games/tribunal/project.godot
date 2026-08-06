@@ -5,8 +5,8 @@ config_version=5
 
 [application]
 
-run/main_scene="res://scenes/TribunalDemo.tscn"
-config/name="Tribunal"
+run/main_scene="res://scenes/MeleeTest.tscn"
+config/name="Tribunal — The Culling Mirror"
 config/features=PackedStringArray("4.3", "Forward Plus")
 config/icon="res://icon.svg"
 
