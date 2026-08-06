@@ -1,10 +1,17 @@
-# ForgeStudio
+# Tribute
 
-**Army of game-building agents** for Unreal Engine 5 + Blender + free asset studios.
+**Spiritual successor to *The Culling*** — skill-based melee battle royale, built with a Gauntlet Loop agent army on Unreal Engine 5 + Blender.
+
+| | |
+|--|--|
+| **GitHub** | https://github.com/KREaTOR-Finance/Tribute |
+| **Engine** | Unreal Engine 5.8+ (`games/culling/` module path; product name: Tribute) |
+| **Method** | Gauntlet Loop (`/gauntlet-loop`) — independent builders + blind critics |
+| **Studio root** | This repo (ForgeStudio layout) |
 
 This repo is both:
-1. **Command HQ** — how the agent platoon designs, assets, builds, and ships
-2. **First title workspace** — greenfield game under `games/first-title/`
+1. **Command HQ** — agent platoon, design, assets, Gauntlet board
+2. **Game workspace** — `games/culling/` (UE project; shipping name **Tribute**)
 
 ## Stack
 

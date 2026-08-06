@@ -1,15 +1,16 @@
-# Game Design Document — The Culling Spiritual Successor
+# Game Design Document — Tribute
 
-> **Codename:** Culling  
+> **Product name:** Tribute  
+> **Codename / module:** Culling (`games/culling/`)  
+> **Repo:** https://github.com/KREaTOR-Finance/Tribute  
 > **Engine:** Unreal Engine 5.8+ (primary)  
-> **Studio:** ForgeStudio  
 > **Status:** Gauntlet active  
 > **Reference bar:** Original *The Culling* combat & movement soul + modern AAA polish/juice + console readiness  
 > **Legacy prototype:** `~/TheCullingGodot` (feel reference, not code port)
 
 ## Elevator pitch
 
-A **skill-based melee battle royale** where movement, timing, spacing, and read/react win fights — not spray, not third-person cover camping. Every duel should feel tense, readable, and earned.
+**Tribute** is a **skill-based melee battle royale** — a spiritual successor to *The Culling* — where movement, timing, spacing, and read/react win fights. Not spray. Not cover camping. Every duel should feel tense, readable, and earned.
 
 ## Design pillars (locked)
 
