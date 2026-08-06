@@ -96,11 +96,14 @@ const HitParticlesScene = preload("res://scripts/HitParticles.tscn")
 const SkinCat = preload("res://scripts/SkinCatalog.gd")
 const CharSkinScript = preload("res://scripts/CharacterSkin.gd")
 const CharAnimScript = preload("res://scripts/CharacterAnimator.gd")
+const CombatAudioScript = preload("res://scripts/CombatAudio.gd")
 
 var character_skin_id: String = ""
 var weapon_skin_id: String = ""
 var _char_skin = null
 var _char_anim = null
+var _combat_audio = null
+var _follow_cam = null  # FollowCamera if present in scene
 var _is_sprinting: bool = false
 var _move_input: Vector2 = Vector2.ZERO
 
@@ -216,6 +219,11 @@ func _ready():
 	_char_anim.name = "CharacterAnimator"
 	add_child(_char_anim)
 	_char_anim.bind(self)
+	_combat_audio = CombatAudioScript.new()
+	_combat_audio.name = "CombatAudio"
+	add_child(_combat_audio)
+	_combat_audio.bind(self)
+	_resolve_follow_camera()
 	_apply_weapon_skin_to_hand()
 
 	# Forward melee hitbox (Culling reach)
@@ -393,9 +401,9 @@ func _physics_process(delta: float):
 		velocity.z = move_toward(velocity.z, 0, fric * step)
 	move_and_slide()
 
-	# Feed locomotion to character art
+	# Feed locomotion to character art + footfalls
+	var hspd := Vector2(velocity.x, velocity.z).length()
 	if _char_anim:
-		var hspd := Vector2(velocity.x, velocity.z).length()
 		_char_anim.set_move_blend(hspd, sprint_speed, _is_sprinting)
 		# Keep walk/idle pose when not in special combat pose
 		if melee_state in [MeleeState.IDLE, MeleeState.LIGHT_RECOVERY, MeleeState.HEAVY_RECOVERY]:
@@ -405,6 +413,8 @@ func _physics_process(delta: float):
 				_char_anim.set_pose(CharAnimScript.Pose.WALK)
 			else:
 				_char_anim.set_pose(CharAnimScript.Pose.IDLE)
+	if _combat_audio:
+		_combat_audio.tick_footsteps(step, hspd, _is_sprinting, is_on_floor())
 
 	if shove_cooldown_timer > 0:
 		shove_cooldown_timer -= step
@@ -522,6 +532,30 @@ func _equip_test_weapon(weapon_type: int):
 	_apply_weapon_skin_to_hand()
 
 
+func _resolve_follow_camera() -> void:
+	_follow_cam = null
+	var parent = get_parent()
+	if parent and parent.has_node("Camera3D"):
+		var cam = parent.get_node("Camera3D")
+		if cam is FollowCamera:
+			_follow_cam = cam
+	# Also accept any FollowCamera in group
+	if _follow_cam == null:
+		var cams = get_tree().get_nodes_in_group("follow_cameras") if get_tree() else []
+		if cams.size() > 0:
+			_follow_cam = cams[0]
+
+
+func _notify_camera_swing(heavy: bool) -> void:
+	if _follow_cam and _follow_cam.has_method("frame_swing"):
+		_follow_cam.frame_swing(heavy, -global_transform.basis.z)
+
+
+func _notify_camera_hit(heavy: bool) -> void:
+	if _follow_cam and _follow_cam.has_method("frame_hit"):
+		_follow_cam.frame_hit(heavy)
+
+
 func _ensure_hand_weapon_visual() -> void:
 	# First-class weapon skins require Hand + WeaponVisual (scene may omit if parse-glitched)
 	var hand = get_node_or_null("Hand")
@@ -583,6 +617,9 @@ func start_heavy_windup():
 	stamina -= 25
 	stamina_changed.emit(stamina)
 	_set_melee_state(MeleeState.HEAVY_WINDUP, heavy_attack_windup)
+	_notify_camera_swing(true)
+	if _combat_audio:
+		_combat_audio.play_whoosh(true)
 	print(name, " winding heavy (readable commit)...")
 
 func _melee_shape_query(heavy: bool) -> void:
@@ -610,12 +647,17 @@ func _perform_light_attack():
 	# Short forward lunge into the cut
 	var fwd := -global_transform.basis.z
 	velocity += fwd * attack_lunge * 0.65
+	_notify_camera_swing(false)
+	if _combat_audio:
+		_combat_audio.play_whoosh(false)
 	print(name, " light jab!")
 
 func start_block():
 	if not _can_act() or stamina < block_stamina_cost * 0.5:
 		return
 	_set_melee_state(MeleeState.BLOCKING)
+	if _combat_audio:
+		_combat_audio.play_block()
 	print(name, " blocking")
 
 func end_block():
@@ -632,6 +674,9 @@ func _perform_shove():
 	# Step into the shove
 	var fwd := -global_transform.basis.z
 	velocity += fwd * attack_lunge * 1.1 + Vector3(0, 1.2, 0)
+	_notify_camera_swing(false)
+	if _combat_audio:
+		_combat_audio.play_whoosh(false)
 	var space_state = get_world_3d().direct_space_state
 	var query = PhysicsShapeQueryParameters3D.new()
 	var sphere := SphereShape3D.new()
@@ -684,6 +729,9 @@ func _on_melee_hit(body):
 
 	_apply_hit_feedback(is_heavy)
 	_spawn_hit_particles(body.global_position, is_heavy)
+	if _combat_audio:
+		_combat_audio.play_hit(is_heavy)
+	_notify_camera_hit(is_heavy)
 
 func _spawn_hit_particles(world_pos: Vector3, is_heavy: bool):
 	var particles_instance = HitParticlesScene.instantiate()
@@ -696,10 +744,6 @@ func _apply_hit_feedback(is_heavy: bool):
 	local_hitstop = 0.09 if is_heavy else 0.05
 	if camera_shake:
 		camera_shake.add_trauma(0.65 if is_heavy else 0.35)
-	if mesh_instance:
-		var tween = create_tween()
-		tween.tween_property(mesh_instance, "scale", Vector3(0.95, 1.1, 0.95), 0.04)
-		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.12)
 	print(name, " landed hit! (heavy=", is_heavy, ")")
 
 func take_damage(amount: int, attacker: Node):

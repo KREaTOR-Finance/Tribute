@@ -9,6 +9,7 @@ const Catalog = preload("res://scripts/SkinCatalog.gd")
 const ObjLoader = preload("res://scripts/ObjMeshLoader.gd")
 const PropSkinUtil = preload("res://scripts/PropSkins.gd")
 const CharAnimScript = preload("res://scripts/CharacterAnimator.gd")
+const CombatAudioScript = preload("res://scripts/CombatAudio.gd")
 
 @export var max_health: int = 100
 @export var move_speed: float = 4.8
@@ -28,6 +29,7 @@ var _winding: bool = false
 var _mesh: MeshInstance3D
 var _skin_rig: Node3D
 var _anim = null
+var _audio = null
 var _alive: bool = true
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 
@@ -92,6 +94,11 @@ func _apply_character_skin() -> void:
 		_anim.name = "CharacterAnimator"
 		add_child(_anim)
 	_anim.bind(self)
+	if _audio == null:
+		_audio = CombatAudioScript.new()
+		_audio.name = "CombatAudio"
+		add_child(_audio)
+		_audio.bind(self)
 	print("HunterAI: skin=", skin_id, " mesh=", _mesh != null)
 
 
@@ -233,6 +240,8 @@ func _physics_process(delta: float) -> void:
 		if _anim:
 			_anim.set_move_blend(move_speed, move_speed, false)
 			_anim.set_pose(CharAnimScript.Pose.WALK)
+		if _audio:
+			_audio.tick_footsteps(delta, move_speed, false, is_on_floor())
 	else:
 		velocity.x = move_toward(velocity.x, 0, move_speed)
 		velocity.z = move_toward(velocity.z, 0, move_speed)
@@ -264,7 +273,13 @@ func _do_attack(heavy: bool) -> void:
 	# Step into the cut
 	var fwd := -global_transform.basis.z
 	velocity += fwd * (4.5 if heavy else 2.5)
+	if _audio:
+		_audio.play_whoosh(heavy)
 	if target.has_method("apply_damage"):
 		target.apply_damage(dmg, self, kb)
+		if _audio:
+			_audio.play_hit(heavy)
 	elif target.has_method("take_damage"):
 		target.take_damage(dmg)
+		if _audio:
+			_audio.play_hit(heavy)

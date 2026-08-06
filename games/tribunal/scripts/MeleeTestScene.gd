@@ -11,7 +11,7 @@ const HunterScript = preload("res://scripts/HunterAI.gd")
 
 @export var use_hotseat: bool = true
 @export var capture_mouse_on_start: bool = true
-@export var spawn_spar_hunters: bool = false
+@export var spawn_spar_hunters: bool = true
 @export var spar_hunter_count: int = 2
 
 @onready var player1 = $Player1
@@ -71,10 +71,24 @@ func _ready():
 		if not arena_manager.match_ended.is_connected(_on_match_ended):
 			arena_manager.match_ended.connect(_on_match_ended)
 
+	if camera:
+		camera.current = true
+		# Disable embedded player cameras so arena FollowCamera owns framing
+		for p in [player1, player2]:
+			if p and p.has_node("Camera3D"):
+				(p.get_node("Camera3D") as Camera3D).current = false
 	if camera and camera is FollowCamera:
 		follow_camera = camera as FollowCamera
+		follow_camera.add_to_group("follow_cameras")
+		follow_camera.is_follow_mode = true
+		follow_camera.start_in_follow = true
 		if follow_camera and player1:
 			follow_camera.set_target(player1)
+			# Re-bind player combat audio/camera after tree is ready
+			if player1.has_method("_resolve_follow_camera"):
+				player1._resolve_follow_camera()
+			if player2 and player2.has_method("_resolve_follow_camera"):
+				player2._resolve_follow_camera()
 
 	if spawn_spar_hunters:
 		_spawn_spar_hunters(spar_hunter_count)
@@ -168,14 +182,13 @@ func _setup_ui():
 	if not ui_layer:
 		return
 	if instructions_label:
-		instructions_label.text = """TRIBUNAL — CULLING MELEE + CHARACTER ART
+		instructions_label.text = """TRIBUNAL — CULLING MELEE
 P1: WASD+Mouse | Shift sprint | LMB light · RMB heavy · Space block · F shove
     1-3 weapons | [ ] body/weapon skin
-P2: IJKL | Ctrl sprint | U light · O heavy · P block · ; shove
-    4-6 weapons | ' body · . weapon skin
+P2: IJKL | Ctrl sprint | U/O light/heavy · P block · ; shove · 4-6 weapons
 
-TAB cam · ESC mouse · R restart
-Poseable hunters · walk/sprint · swing/block/shove poses"""
+TAB cam follow/fixed · ESC mouse · R restart
+Spar hunters on · camera punch-in on swings · footfalls + hits"""
 	if not p1_weapon_label:
 		p1_weapon_label = Label.new()
 		p1_weapon_label.position = Vector2(20, 260)
