@@ -19,11 +19,15 @@ class_name PlayerController
 
 @export var player_id: int = 1  # 1 or 2 for local multiplayer input separation
 
-# === MOVEMENT (weighty but responsive) ===
+# === MOVEMENT (weighty Culling locomotion) ===
 @export var move_speed: float = 6.0
-@export var acceleration: float = 40.0
-@export var friction: float = 25.0
+@export var sprint_speed: float = 8.4
+@export var acceleration: float = 38.0
+@export var friction: float = 28.0
+@export var air_control: float = 0.35
 @export var jump_velocity: float = 6.0
+@export var sprint_stamina_cost: float = 18.0
+@export var attack_lunge: float = 3.2
 
 # === MELEE FEEL TUNING (these are the soul — tweak obsessively in inspector) ===
 # These are the BASE values. When a weapon is equipped, they are overridden by the weapon's profile.
@@ -91,10 +95,14 @@ signal weapon_equipped(weapon_name: String)
 const HitParticlesScene = preload("res://scripts/HitParticles.tscn")
 const SkinCat = preload("res://scripts/SkinCatalog.gd")
 const CharSkinScript = preload("res://scripts/CharacterSkin.gd")
+const CharAnimScript = preload("res://scripts/CharacterAnimator.gd")
 
 var character_skin_id: String = ""
 var weapon_skin_id: String = ""
 var _char_skin = null
+var _char_anim = null
+var _is_sprinting: bool = false
+var _move_input: Vector2 = Vector2.ZERO
 
 # === HUMANNOID VISUAL HELPERS (humanoid-players-1) ===
 # Load the pre-generated low-poly humanoid glb at runtime and replace the capsule mesh.
@@ -198,12 +206,16 @@ func _ready():
 
 	_load_humanoid_visual()
 	_ensure_hand_weapon_visual()
-	# Art skins (body rig + default weapon skin)
+	# Art skins (poseable SkinRig) + animator for move/action poses
 	character_skin_id = SkinCat.default_character_skin(player_id)
 	weapon_skin_id = SkinCat.default_weapon_skin(1)
 	_char_skin = CharSkinScript.new()
 	add_child(_char_skin)
 	_char_skin.apply_to_player(self, character_skin_id)
+	_char_anim = CharAnimScript.new()
+	_char_anim.name = "CharacterAnimator"
+	add_child(_char_anim)
+	_char_anim.bind(self)
 	_apply_weapon_skin_to_hand()
 
 	# Forward melee hitbox (Culling reach)
@@ -279,10 +291,47 @@ func _set_melee_state(s: MeleeState, duration: float = 0.0) -> void:
 		active_is_heavy = true
 	elif s == MeleeState.LIGHT_ACTIVE:
 		active_is_heavy = false
+	_sync_action_pose(s, duration)
+
+
+func _sync_action_pose(s: MeleeState, duration: float) -> void:
+	if _char_anim == null:
+		return
+	match s:
+		MeleeState.IDLE, MeleeState.LIGHT_RECOVERY, MeleeState.HEAVY_RECOVERY:
+			if _is_sprinting and _move_input.length() > 0.1:
+				_char_anim.set_pose(CharAnimScript.Pose.SPRINT)
+			elif _move_input.length() > 0.1:
+				_char_anim.set_pose(CharAnimScript.Pose.WALK)
+			else:
+				_char_anim.set_pose(CharAnimScript.Pose.IDLE)
+		MeleeState.LIGHT_ACTIVE:
+			_char_anim.set_pose(CharAnimScript.Pose.LIGHT_SWING, duration if duration > 0.0 else 0.10)
+		MeleeState.HEAVY_WINDUP:
+			_char_anim.set_pose(CharAnimScript.Pose.HEAVY_WINDUP, duration if duration > 0.0 else heavy_attack_windup)
+		MeleeState.HEAVY_ACTIVE:
+			_char_anim.set_pose(CharAnimScript.Pose.HEAVY_SWING, duration if duration > 0.0 else 0.14)
+		MeleeState.BLOCKING:
+			_char_anim.set_pose(CharAnimScript.Pose.BLOCK)
+		MeleeState.SHOVING:
+			_char_anim.set_pose(CharAnimScript.Pose.SHOVE, duration if duration > 0.0 else 0.18)
+		MeleeState.DEAD:
+			_char_anim.set_pose(CharAnimScript.Pose.DEAD)
+		_:
+			_char_anim.set_pose(CharAnimScript.Pose.IDLE)
 
 
 func _can_act() -> bool:
 	return melee_state in [MeleeState.IDLE, MeleeState.LIGHT_RECOVERY, MeleeState.HEAVY_RECOVERY]
+
+
+func _wants_sprint() -> bool:
+	if player_id == 1:
+		if InputMap.has_action("sprint") and Input.is_action_pressed("sprint"):
+			return true
+		return Input.is_key_pressed(KEY_SHIFT)
+	# P2: Ctrl
+	return Input.is_key_pressed(KEY_CTRL)
 
 
 func _physics_process(delta: float):
@@ -298,24 +347,64 @@ func _physics_process(delta: float):
 		velocity.y -= gravity * step
 
 	var input_dir = _get_movement_input()
+	_move_input = input_dir
+
+	# Sprint (Culling chase) — burns stamina, blocked during heavy commit
+	_is_sprinting = false
+	var base_spd := move_speed
+	if _wants_sprint() and input_dir.length() > 0.1 and stamina > 5.0 \
+			and melee_state in [MeleeState.IDLE, MeleeState.LIGHT_RECOVERY, MeleeState.HEAVY_RECOVERY]:
+		_is_sprinting = true
+		base_spd = sprint_speed
+		stamina = max(0.0, stamina - sprint_stamina_cost * step)
+		stamina_changed.emit(stamina)
+		if stamina <= 0.0:
+			_is_sprinting = false
+			base_spd = move_speed
+
 	var speed_mul := 1.0
 	match melee_state:
 		MeleeState.BLOCKING:
+			speed_mul = 0.48
+		MeleeState.HEAVY_WINDUP:
+			speed_mul = 0.32
+		MeleeState.HEAVY_ACTIVE:
 			speed_mul = 0.55
-		MeleeState.HEAVY_WINDUP, MeleeState.HEAVY_ACTIVE:
-			speed_mul = 0.4
 		MeleeState.LIGHT_ACTIVE:
-			speed_mul = 0.75
+			speed_mul = 0.82
+		MeleeState.SHOVING:
+			speed_mul = 0.7
+		MeleeState.LIGHT_RECOVERY, MeleeState.HEAVY_RECOVERY:
+			speed_mul = 0.88
 		_:
 			speed_mul = 1.0
+
 	var direction = (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
+	var accel := acceleration
+	if not is_on_floor():
+		accel *= air_control
+	var target_spd := base_spd * speed_mul
 	if direction:
-		velocity.x = move_toward(velocity.x, direction.x * move_speed * speed_mul, acceleration * step)
-		velocity.z = move_toward(velocity.z, direction.z * move_speed * speed_mul, acceleration * step)
+		velocity.x = move_toward(velocity.x, direction.x * target_spd, accel * step)
+		velocity.z = move_toward(velocity.z, direction.z * target_spd, accel * step)
 	else:
-		velocity.x = move_toward(velocity.x, 0, friction * step)
-		velocity.z = move_toward(velocity.z, 0, friction * step)
+		var fric := friction if is_on_floor() else friction * 0.15
+		velocity.x = move_toward(velocity.x, 0, fric * step)
+		velocity.z = move_toward(velocity.z, 0, fric * step)
 	move_and_slide()
+
+	# Feed locomotion to character art
+	if _char_anim:
+		var hspd := Vector2(velocity.x, velocity.z).length()
+		_char_anim.set_move_blend(hspd, sprint_speed, _is_sprinting)
+		# Keep walk/idle pose when not in special combat pose
+		if melee_state in [MeleeState.IDLE, MeleeState.LIGHT_RECOVERY, MeleeState.HEAVY_RECOVERY]:
+			if _is_sprinting and hspd > 0.4:
+				_char_anim.set_pose(CharAnimScript.Pose.SPRINT)
+			elif hspd > 0.35:
+				_char_anim.set_pose(CharAnimScript.Pose.WALK)
+			else:
+				_char_anim.set_pose(CharAnimScript.Pose.IDLE)
 
 	if shove_cooldown_timer > 0:
 		shove_cooldown_timer -= step
@@ -341,7 +430,7 @@ func _physics_process(delta: float):
 		stamina_changed.emit(stamina)
 		if stamina <= 0:
 			_set_melee_state(MeleeState.IDLE)
-	elif melee_state == MeleeState.IDLE and stamina < max_stamina:
+	elif melee_state == MeleeState.IDLE and not _is_sprinting and stamina < max_stamina:
 		stamina = min(stamina + stamina_regen * step, max_stamina)
 		stamina_changed.emit(stamina)
 
@@ -354,10 +443,9 @@ func _advance_melee_state() -> void:
 			_set_melee_state(MeleeState.IDLE)
 		MeleeState.HEAVY_WINDUP:
 			_set_melee_state(MeleeState.HEAVY_ACTIVE, 0.14)
-			if mesh_instance:
-				var tween = create_tween()
-				tween.tween_property(mesh_instance, "scale", Vector3(1.12, 0.9, 1.12), 0.06)
-				tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.12)
+			# Commit lunge into heavy strike
+			var fwd := -global_transform.basis.z
+			velocity += fwd * attack_lunge * 1.35
 		MeleeState.HEAVY_ACTIVE:
 			_set_melee_state(MeleeState.HEAVY_RECOVERY, heavy_attack_cooldown * 0.65)
 		MeleeState.HEAVY_RECOVERY:
@@ -475,6 +563,8 @@ func _apply_weapon_skin_to_hand() -> void:
 func _cycle_character_skin() -> void:
 	if _char_skin and _char_skin.has_method("cycle_skin"):
 		character_skin_id = _char_skin.cycle_skin(self)
+		if _char_anim:
+			_char_anim.bind(self)
 		print(name, " character skin -> ", character_skin_id)
 
 
@@ -494,9 +584,6 @@ func start_heavy_windup():
 	stamina_changed.emit(stamina)
 	_set_melee_state(MeleeState.HEAVY_WINDUP, heavy_attack_windup)
 	print(name, " winding heavy (readable commit)...")
-	if mesh_instance:
-		var tween = create_tween()
-		tween.tween_property(mesh_instance, "scale", Vector3(1.2, 0.7, 1.2), heavy_attack_windup * 0.85)
 
 func _melee_shape_query(heavy: bool) -> void:
 	var space := get_world_3d().direct_space_state
@@ -520,10 +607,9 @@ func _perform_light_attack():
 	stamina -= 6
 	stamina_changed.emit(stamina)
 	_set_melee_state(MeleeState.LIGHT_ACTIVE, 0.10)
-	if mesh_instance:
-		var tween = create_tween()
-		tween.tween_property(mesh_instance, "scale", Vector3(1.08, 1.08, 1.08), 0.03)
-		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.08)
+	# Short forward lunge into the cut
+	var fwd := -global_transform.basis.z
+	velocity += fwd * attack_lunge * 0.65
 	print(name, " light jab!")
 
 func start_block():
@@ -531,16 +617,10 @@ func start_block():
 		return
 	_set_melee_state(MeleeState.BLOCKING)
 	print(name, " blocking")
-	if mesh_instance:
-		var tween = create_tween()
-		tween.tween_property(mesh_instance, "scale", Vector3(0.95, 1.15, 0.95), 0.1)
 
 func end_block():
 	if melee_state == MeleeState.BLOCKING:
 		_set_melee_state(MeleeState.IDLE)
-	if mesh_instance:
-		var tween = create_tween()
-		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.12)
 
 func _perform_shove():
 	if not _can_act() or shove_cooldown_timer > 0 or stamina < 12:
@@ -549,6 +629,9 @@ func _perform_shove():
 	stamina -= 12
 	stamina_changed.emit(stamina)
 	_set_melee_state(MeleeState.SHOVING, 0.18)
+	# Step into the shove
+	var fwd := -global_transform.basis.z
+	velocity += fwd * attack_lunge * 1.1 + Vector3(0, 1.2, 0)
 	var space_state = get_world_3d().direct_space_state
 	var query = PhysicsShapeQueryParameters3D.new()
 	var sphere := SphereShape3D.new()
@@ -628,7 +711,7 @@ func take_damage(amount: int, attacker: Node):
 
 	print(name, " took ", amount, " damage (HP left: ", health, ")")
 
-	# === NEW: Knockback + hit reaction on receiver ===
+	# Knockback + hit reaction on receiver
 	if attacker and attacker is CharacterBody3D:
 		var push_dir = (global_position - attacker.global_position).normalized()
 		var knockback_force = hit_knockback_force
@@ -641,29 +724,54 @@ func take_damage(amount: int, attacker: Node):
 		
 		velocity += push_dir * knockback_force + Vector3(0, 2.5, 0)  # slight upward pop
 
-	if mesh_instance:
-		var tween = create_tween()
-		tween.tween_property(mesh_instance, "scale", Vector3(0.9, 1.15, 0.9), hit_reaction_duration * 0.4)
-		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), hit_reaction_duration * 0.6)
-		if mesh_instance.material_override is StandardMaterial3D:
-			var mat: StandardMaterial3D = mesh_instance.material_override
-			mat.emission_enabled = true
-			mat.emission = Color(1, 0.15, 0.1)
-			mat.emission_energy_multiplier = 4.0
-			get_tree().create_timer(0.12).timeout.connect(func ():
-				if is_instance_valid(mat):
-					mat.emission_energy_multiplier = 0.0
-			)
+	if _char_anim and health > 0:
+		_char_anim.set_pose(CharAnimScript.Pose.HIT, hit_reaction_duration)
+	# Flash first BodyMesh / Torso material
+	_flash_hit_material()
 
 	if health <= 0:
 		die(attacker)
 
+
+func _flash_hit_material() -> void:
+	var rig = get_node_or_null("SkinRig")
+	if rig == null:
+		return
+	var meshes: Array = []
+	_collect_mesh_instances(rig, meshes)
+	for m in meshes:
+		if m is MeshInstance3D and (m as MeshInstance3D).material_override is StandardMaterial3D:
+			var mat: StandardMaterial3D = (m as MeshInstance3D).material_override.duplicate()
+			(m as MeshInstance3D).material_override = mat
+			mat.emission_enabled = true
+			mat.emission = Color(1, 0.15, 0.1)
+			mat.emission_energy_multiplier = 3.5
+			get_tree().create_timer(0.12).timeout.connect(func ():
+				if is_instance_valid(mat):
+					mat.emission_energy_multiplier = 0.0
+			)
+			break
+
+
+func _collect_mesh_instances(node: Node, out: Array) -> void:
+	if node is MeshInstance3D:
+		out.append(node)
+	for c in node.get_children():
+		_collect_mesh_instances(c, out)
+
+
 func die(attacker: Node):
 	print(name, " DIED to ", attacker.name if attacker else "unknown")
 	_set_melee_state(MeleeState.DEAD)
+	if _char_anim:
+		_char_anim.set_pose(CharAnimScript.Pose.DEAD)
 	player_died.emit()
 	set_physics_process(false)
-	visible = false
+	# Brief death pose before hide
+	get_tree().create_timer(0.45).timeout.connect(func ():
+		if is_instance_valid(self):
+			visible = false
+	)
 
 func _process(delta):
 	# Expose stamina for UI

@@ -8,6 +8,7 @@ signal died
 const Catalog = preload("res://scripts/SkinCatalog.gd")
 const ObjLoader = preload("res://scripts/ObjMeshLoader.gd")
 const PropSkinUtil = preload("res://scripts/PropSkins.gd")
+const CharAnimScript = preload("res://scripts/CharacterAnimator.gd")
 
 @export var max_health: int = 100
 @export var move_speed: float = 4.8
@@ -26,6 +27,7 @@ var _windup: float = 0.0
 var _winding: bool = false
 var _mesh: MeshInstance3D
 var _skin_rig: Node3D
+var _anim = null
 var _alive: bool = true
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 
@@ -79,14 +81,17 @@ func _apply_character_skin() -> void:
 	var old = get_node_or_null("SkinRig")
 	if old:
 		old.queue_free()
-	# Prefer catalog OBJ / procedural character rig
+	# Poseable multipart rig (+ optional OBJ shell)
 	_skin_rig = Catalog.build_character_rig(self, skin_id)
-	# Keep _mesh pointer for hit flash / windup scale
 	_mesh = _find_first_mesh(_skin_rig)
-	# Sync team_color from skin body for death marks
 	var skins := Catalog.character_skins()
 	if skins.has(skin_id):
 		team_color = skins[skin_id]["body"]
+	if _anim == null:
+		_anim = CharAnimScript.new()
+		_anim.name = "CharacterAnimator"
+		add_child(_anim)
+	_anim.bind(self)
 	print("HunterAI: skin=", skin_id, " mesh=", _mesh != null)
 
 
@@ -175,6 +180,8 @@ func _collect_meshes(node: Node, out: Array) -> void:
 func _die() -> void:
 	_alive = false
 	var death_pos := global_position
+	if _anim:
+		_anim.set_pose(CharAnimScript.Pose.DEAD)
 	died.emit()
 	# Death mark + loot prop skins (Culling fallen-hunter juice)
 	var parent = get_parent()
@@ -185,6 +192,7 @@ func _die() -> void:
 			PropSkinUtil.spawn_loot(parent as Node3D, death_pos + Vector3(0, 0.25, 0.15))
 	collision_layer = 0
 	var tw := create_tween()
+	tw.tween_interval(0.35)
 	tw.tween_property(self, "global_position", death_pos + Vector3(0, -2, 0), 0.8)
 	tw.tween_callback(queue_free)
 
@@ -197,17 +205,13 @@ func _physics_process(delta: float) -> void:
 	_attack_cd = max(0.0, _attack_cd - delta)
 	if _winding:
 		_windup -= delta
-		if _skin_rig:
-			_skin_rig.scale = Vector3(1.15, 1.05, 1.15)
-		elif _mesh:
-			_mesh.scale = Vector3(1.2, 1.05, 1.2)
+		if _anim:
+			_anim.set_pose(CharAnimScript.Pose.HEAVY_WINDUP, max(_windup, 0.05))
 		if _windup <= 0.0:
 			_winding = false
+			if _anim:
+				_anim.set_pose(CharAnimScript.Pose.HEAVY_SWING, 0.14)
 			_do_attack(true)
-			if _skin_rig:
-				_skin_rig.scale = Vector3.ONE
-			elif _mesh:
-				_mesh.scale = Vector3.ONE
 		move_and_slide()
 		return
 	if target == null or not is_instance_valid(target):
@@ -226,14 +230,24 @@ func _physics_process(delta: float) -> void:
 		var dir := to.normalized()
 		velocity.x = dir.x * move_speed
 		velocity.z = dir.z * move_speed
+		if _anim:
+			_anim.set_move_blend(move_speed, move_speed, false)
+			_anim.set_pose(CharAnimScript.Pose.WALK)
 	else:
 		velocity.x = move_toward(velocity.x, 0, move_speed)
 		velocity.z = move_toward(velocity.z, 0, move_speed)
+		if _anim and not _winding:
+			_anim.set_move_blend(0.0, move_speed, false)
+			_anim.set_pose(CharAnimScript.Pose.IDLE)
 		if _attack_cd <= 0.0:
 			if randf() < 0.28:
 				_winding = true
 				_windup = 0.55
+				if _anim:
+					_anim.set_pose(CharAnimScript.Pose.HEAVY_WINDUP, 0.55)
 			else:
+				if _anim:
+					_anim.set_pose(CharAnimScript.Pose.LIGHT_SWING, 0.12)
 				_do_attack(false)
 			_attack_cd = 0.9 if _winding else 0.45
 	move_and_slide()
@@ -247,6 +261,9 @@ func _do_attack(heavy: bool) -> void:
 		return
 	var dmg := 28 if heavy else 12
 	var kb := 14.0 if heavy else 8.0
+	# Step into the cut
+	var fwd := -global_transform.basis.z
+	velocity += fwd * (4.5 if heavy else 2.5)
 	if target.has_method("apply_damage"):
 		target.apply_damage(dmg, self, kb)
 	elif target.has_method("take_damage"):

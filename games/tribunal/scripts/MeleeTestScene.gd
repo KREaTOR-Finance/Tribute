@@ -168,12 +168,14 @@ func _setup_ui():
 	if not ui_layer:
 		return
 	if instructions_label:
-		instructions_label.text = """TRIBUNAL — CULLING MIRROR + SKINS
-P1: WASD+Mouse | LMB/RMB | Space/F | 1-3 weapons | [ ] cycle body/weapon skin
-P2: IJKL | U/O | P/; | 4-6 weapons | . cycle weapon skin
+		instructions_label.text = """TRIBUNAL — CULLING MELEE + CHARACTER ART
+P1: WASD+Mouse | Shift sprint | LMB light · RMB heavy · Space block · F shove
+    1-3 weapons | [ ] body/weapon skin
+P2: IJKL | Ctrl sprint | U light · O heavy · P block · ; shove
+    4-6 weapons | ' body · . weapon skin
 
 TAB cam · ESC mouse · R restart
-Skins: Crimson/Azure/Bone/Iron · Steel/Bloodsteel/Bronze/Bone/Obsidian"""
+Poseable hunters · walk/sprint · swing/block/shove poses"""
 	if not p1_weapon_label:
 		p1_weapon_label = Label.new()
 		p1_weapon_label.position = Vector2(20, 260)

@@ -14,7 +14,8 @@ hunter AI skins, and death/loot prop skins. Runtime prefers **skin kit OBJs**.
 
 **In-game (MeleeTest):** P1 `[` cycles body · P2 `'` cycles body  
 
-Pipeline: `ObjMeshLoader` → `ArrayMesh` → `SkinCatalog.build_character_rig` (OBJ first, procedural fallback). Accent shoulder pads keep team readability.
+Pipeline: poseable **SkinRig** (`Hip/Torso/Head/ArmL/ArmR/LegL/LegR`) via `SkinCatalog.build_character_rig` + optional OBJ shell.  
+`CharacterAnimator` drives walk/sprint/light/heavy/block/shove/hit/death. Accent pads + visor for team readability.
 
 ## Weapon skins
 

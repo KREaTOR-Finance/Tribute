@@ -233,80 +233,109 @@ static func make_weapon_grip_material(skin_id: String) -> StandardMaterial3D:
 	return mat
 
 
-## Builds hunter body: prefers first-class skin OBJ, else procedural rig.
+## Builds poseable multipart SkinRig (Hip/Torso/Arms/Legs) for CharacterAnimator.
+## Optional skin-kit OBJ attaches as silhouette under Hip (first-class art).
 static func build_character_rig(parent: Node3D, skin_id: String) -> Node3D:
 	var root := Node3D.new()
 	root.name = "SkinRig"
 	var body_mat := make_body_material(skin_id)
 	var accent_mat := make_accent_material(skin_id)
+	var metal_mat := StandardMaterial3D.new()
 	var skins := character_skins()
 	var s: Dictionary = skins.get(skin_id, skins[SKIN_HUNTER_CRIMSON])
+	metal_mat.albedo_color = s.get("metal", Color(0.55, 0.5, 0.45))
+	metal_mat.metallic = 0.75
+	metal_mat.roughness = 0.35
 	var mesh_path := str(s.get("mesh", ""))
 
-	# First-class mesh from skin kit OBJ
-	if mesh_path != "" and FileAccess.file_exists(mesh_path):
-		var mi = ObjLoader.make_mesh_instance(mesh_path, body_mat)
-		if mi:
-			mi.name = "BodyMesh"
-			# Blender exports are ~2m tall; feet near y=0
-			mi.scale = Vector3(1.0, 1.0, 1.0)
-			mi.position = Vector3(0, 0, 0)
-			root.add_child(mi)
-			# Accent shoulder orbs for team readability
-			for x in [-0.38, 0.38]:
-				var pad := MeshInstance3D.new()
-				var box := BoxMesh.new()
-				box.size = Vector3(0.18, 0.12, 0.22)
-				pad.mesh = box
-				pad.position = Vector3(x, 1.42, 0.05)
-				pad.material_override = accent_mat
-				root.add_child(pad)
-			parent.add_child(root)
-			print("SkinCatalog: OBJ character mesh ", mesh_path)
-			return root
+	# --- Poseable skeleton (animation authority) ---
+	var hip := Node3D.new()
+	hip.name = "Hip"
+	hip.position = Vector3(0, 0.95, 0)
+	hip.set_meta("rest_pos", hip.position)
+	root.add_child(hip)
 
-	# Procedural fallback
-	var torso := MeshInstance3D.new()
-	var cap := CapsuleMesh.new()
-	cap.radius = 0.36
-	cap.height = 1.05
-	torso.mesh = cap
-	torso.position = Vector3(0, 1.05, 0)
-	torso.material_override = body_mat
+	var torso := Node3D.new()
 	torso.name = "Torso"
-	root.add_child(torso)
+	torso.set_meta("rest_pos", Vector3.ZERO)
+	hip.add_child(torso)
+	_add_box_mesh(torso, "TorsoMesh", Vector3(0.48, 0.58, 0.32), Vector3.ZERO, body_mat)
+	# Belt
+	_add_box_mesh(torso, "Belt", Vector3(0.52, 0.08, 0.34), Vector3(0, -0.28, 0), metal_mat)
+	# Shoulder pads (team accent)
+	_add_box_mesh(torso, "PadL", Vector3(0.2, 0.12, 0.24), Vector3(-0.32, 0.28, 0.02), accent_mat)
+	_add_box_mesh(torso, "PadR", Vector3(0.2, 0.12, 0.24), Vector3(0.32, 0.28, 0.02), accent_mat)
 
-	var head := MeshInstance3D.new()
-	var sph := SphereMesh.new()
-	sph.radius = 0.22
-	head.mesh = sph
-	head.position = Vector3(0, 1.78, 0)
-	head.material_override = body_mat
+	var head := Node3D.new()
 	head.name = "Head"
-	root.add_child(head)
+	head.position = Vector3(0, 0.42, 0)
+	head.set_meta("rest_pos", head.position)
+	torso.add_child(head)
+	_add_box_mesh(head, "HeadMesh", Vector3(0.28, 0.28, 0.28), Vector3.ZERO, body_mat)
+	# Visor accent
+	_add_box_mesh(head, "Visor", Vector3(0.3, 0.06, 0.12), Vector3(0, 0.02, 0.12), accent_mat)
 
-	for x in [-0.42, 0.42]:
-		var pad := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(0.22, 0.14, 0.28)
-		pad.mesh = box
-		pad.position = Vector3(x, 1.45, 0)
-		pad.material_override = accent_mat
-		root.add_child(pad)
+	var arm_l := Node3D.new()
+	arm_l.name = "ArmL"
+	arm_l.position = Vector3(-0.38, 0.28, 0)
+	arm_l.set_meta("rest_pos", arm_l.position)
+	torso.add_child(arm_l)
+	_add_box_mesh(arm_l, "ArmLMesh", Vector3(0.12, 0.48, 0.12), Vector3(0, -0.22, 0), body_mat)
 
-	for x in [-0.16, 0.16]:
-		var leg := MeshInstance3D.new()
-		var lmesh := CapsuleMesh.new()
-		lmesh.radius = 0.12
-		lmesh.height = 0.7
-		leg.mesh = lmesh
-		leg.position = Vector3(x, 0.45, 0)
-		leg.material_override = body_mat
-		root.add_child(leg)
+	var arm_r := Node3D.new()
+	arm_r.name = "ArmR"
+	arm_r.position = Vector3(0.38, 0.28, 0)
+	arm_r.set_meta("rest_pos", arm_r.position)
+	torso.add_child(arm_r)
+	_add_box_mesh(arm_r, "ArmRMesh", Vector3(0.12, 0.48, 0.12), Vector3(0, -0.22, 0), body_mat)
+
+	var leg_l := Node3D.new()
+	leg_l.name = "LegL"
+	leg_l.position = Vector3(-0.14, 0, 0)
+	leg_l.set_meta("rest_pos", leg_l.position)
+	hip.add_child(leg_l)
+	_add_box_mesh(leg_l, "LegLMesh", Vector3(0.14, 0.72, 0.14), Vector3(0, -0.45, 0), body_mat)
+
+	var leg_r := Node3D.new()
+	leg_r.name = "LegR"
+	leg_r.position = Vector3(0.14, 0, 0)
+	leg_r.set_meta("rest_pos", leg_r.position)
+	hip.add_child(leg_r)
+	_add_box_mesh(leg_r, "LegRMesh", Vector3(0.14, 0.72, 0.14), Vector3(0, -0.45, 0), body_mat)
+
+	# Optional first-class skin kit OBJ as faint silhouette / armor shell
+	if mesh_path != "" and FileAccess.file_exists(mesh_path):
+		var shell = ObjLoader.make_mesh_instance(mesh_path, body_mat)
+		if shell:
+			shell.name = "BodyShell"
+			shell.position = Vector3(0, -0.95, 0)  # OBJ feet at y=0 → under hip space
+			shell.scale = Vector3(1.02, 1.02, 1.02)
+			# Slightly transparent shell so multipart pose reads
+			var shell_mat := body_mat.duplicate() as StandardMaterial3D
+			shell_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			shell_mat.albedo_color.a = 0.22
+			shell.material_override = shell_mat
+			hip.add_child(shell)
+			print("SkinCatalog: poseable rig + OBJ shell ", mesh_path)
+		else:
+			print("SkinCatalog: poseable rig (OBJ failed) ", skin_id)
+	else:
+		print("SkinCatalog: poseable procedural rig ", skin_id)
 
 	parent.add_child(root)
-	print("SkinCatalog: procedural character fallback ", skin_id)
 	return root
+
+
+static func _add_box_mesh(parent: Node3D, name: String, size: Vector3, pos: Vector3, mat: Material) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.name = name
+	var box := BoxMesh.new()
+	box.size = size
+	mi.mesh = box
+	mi.position = pos
+	mi.material_override = mat
+	parent.add_child(mi)
+	return mi
 
 
 static func weapon_mesh_path(skin_id: String, weapon_type: int) -> String:
