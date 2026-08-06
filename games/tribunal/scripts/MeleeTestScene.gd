@@ -13,6 +13,7 @@ const ZoneSystemScript = preload("res://scripts/ZoneSystem.gd")
 const TribunalHUDScript = preload("res://scripts/TribunalHUD.gd")
 const ScavengingSystemScript = preload("res://scripts/ScavengingSystem.gd")
 const TrapSystemScript = preload("res://scripts/TrapSystem.gd")
+const ArenaCoverUtil = preload("res://scripts/ArenaCover.gd")
 
 @export var use_hotseat: bool = true
 @export var capture_mouse_on_start: bool = true
@@ -20,6 +21,8 @@ const TrapSystemScript = preload("res://scripts/TrapSystem.gd")
 @export var spar_hunter_count: int = 2
 @export var enable_zone: bool = true
 @export var scav_loot_count: int = 10
+@export var dense_cover: bool = true
+@export var last_stand_mode: bool = true  # no endless respawn — Culling stakes
 
 @onready var player1 = $Player1
 @onready var player2 = $Player2
@@ -47,7 +50,11 @@ func _ready():
 	_apply_culling_environment()
 	_apply_pbr_to_arena()
 	_apply_prop_skins()
+	if dense_cover:
+		ArenaCoverUtil.spawn_dense_cover(self)
+		_apply_prop_skins()  # re-skin any MeshInstance3D props that match names; dense cover uses materials already
 	_setup_scavenge_and_traps()
+	_configure_match_stakes()
 
 	if player1:
 		player1.player_id = 1
@@ -113,8 +120,25 @@ func _ready():
 	print("Fight. Mirror Culling. Prove the loop.")
 
 
+func _configure_match_stakes() -> void:
+	if arena_manager == null:
+		return
+	# Last-stand: elim is permanent (Culling stakes). Toggle last_stand_mode=false for spar training.
+	if last_stand_mode:
+		arena_manager.test_mode_respawn = false
+		if "match_duration" in arena_manager:
+			# 5 min micro-match is enough pressure with zone
+			if float(arena_manager.match_duration) > 400.0:
+				arena_manager.match_duration = 300.0
+				arena_manager.time_remaining = 300.0
+		print("MeleeTest: LAST STAND — no respawn (R to restart match)")
+	else:
+		arena_manager.test_mode_respawn = true
+		print("MeleeTest: spar training respawn ON")
+
+
 func _setup_scavenge_and_traps() -> void:
-	# Live Culling loop: scavenge caches + placeable traps in the test arena
+	# Live Culling loop: contested E-channel scavenge + placeable traps
 	scavenging_system = get_node_or_null("ScavengingSystem") as ScavengingSystem
 	if scavenging_system == null:
 		scavenging_system = ScavengingSystemScript.new()
@@ -136,9 +160,21 @@ func _setup_scavenge_and_traps() -> void:
 		scavenging_system.loot_collected.connect(_on_loot_collected)
 	if not trap_system.trap_triggered.is_connected(_on_trap_triggered):
 		trap_system.trap_triggered.connect(_on_trap_triggered)
+	if scavenging_system.has_signal("channel_started") and not scavenging_system.channel_started.is_connected(_on_scav_channel_started):
+		scavenging_system.channel_started.connect(_on_scav_channel_started)
 
 	scavenging_system.spawn_loot_in_arena(self, scav_loot_count)
-	print("MeleeTest: ScavengingSystem + TrapSystem live (loot=%d)" % scav_loot_count)
+	print("MeleeTest: ScavengingSystem + TrapSystem live (loot=%d, E/H channel)" % scav_loot_count)
+
+
+func try_scavenge_for(player: PlayerController) -> void:
+	if scavenging_system and scavenging_system.has_method("try_begin_scavenge"):
+		scavenging_system.try_begin_scavenge(player)
+
+
+func _on_scav_channel_started(player: Node, _loot: Area3D) -> void:
+	if tribunal_hud and tribunal_hud.has_method("push_feed"):
+		tribunal_hud.push_feed("%s scavenging…" % player.name)
 
 
 func _on_loot_collected(item: Dictionary, player: Node) -> void:
@@ -298,9 +334,9 @@ func _setup_ui():
 
 	if ui_layer:
 		if instructions_label:
-			instructions_label.text = """P1 WASD+Mouse · Shift sprint · LMB/RMB · Space block · F shove · 1-3 wpn · Q trap
-P2 IJKL · Ctrl sprint · U/O · P block · ; shove · 4-6 wpn · B trap · TAB cam · ESC · R restart
-Scavenge gold caches · spar hunters · zone live"""
+			instructions_label.text = """P1: WASD Mouse · Shift sprint · LMB/RMB · Space block · F shove · C dodge · E scavenge · Q trap
+P2: IJKL · Ctrl sprint · U/O · P block · ; shove · V dodge · H scavenge · B trap
+TAB cam · ESC mouse · R restart match · LAST STAND (no respawn) · zone + hunters"""
 			instructions_label.offset_left = 16
 			instructions_label.offset_top = 640
 			instructions_label.offset_right = 980

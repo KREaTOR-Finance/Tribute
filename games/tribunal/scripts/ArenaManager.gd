@@ -9,7 +9,7 @@ class_name ArenaManager
 
 @export var match_duration: float = 20.0 * 60.0  # 20 minutes (shorten for testing)
 @export var max_players: int = 8   # MVP: start with 4-8, scale to 16 later
-@export var test_mode_respawn: bool = true  # For rapid melee testing: auto-respawn after death
+@export var test_mode_respawn: bool = false  # Last-stand default; enable only for training spars
 
 var time_remaining: float = match_duration
 var players_alive: Array = []
@@ -60,11 +60,16 @@ func _on_player_died(player):
 		var winner = players_alive[0] if players_alive.size() > 0 else null
 		match_ended.emit(winner)
 		print("MATCH OVER — Winner:", winner.name if winner else "None (draw)")
+		# Freeze survivors physics soft — they can still look; R restarts scene
+		if winner and is_instance_valid(winner) and winner is CharacterBody3D:
+			(winner as CharacterBody3D).velocity = Vector3.ZERO
 	
 	if test_mode_respawn:
 		await get_tree().create_timer(2.5).timeout
 		if is_instance_valid(player) and player in players:
 			_respawn_player(player)
+	else:
+		print(player.name, " permanently eliminated (last stand)")
 
 func _respawn_player(player):
 	if not is_instance_valid(player):

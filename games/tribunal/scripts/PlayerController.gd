@@ -552,7 +552,8 @@ func _handle_combat_input(event):
 				_cycle_weapon_skin()
 			elif event.keycode == KEY_Q:
 				_try_place_trap()
-			# E reserved for future interact; loot is Area auto-pickup
+			elif event.keycode == KEY_E:
+				_try_scavenge()
 	elif player_id == 2:
 		if event is InputEventKey and event.pressed:
 			if event.keycode == KEY_4:
@@ -570,6 +571,9 @@ func _handle_combat_input(event):
 				_cycle_weapon_skin()
 			elif event.keycode == KEY_B:
 				_try_place_trap()
+			elif event.keycode == KEY_H:
+				# P2 interact (E is free on P1; H = "hold to loot" mnemonic)
+				_try_scavenge()
 
 func _equip_test_weapon(weapon_type: int):
 	var w = Weapon.new()
@@ -581,7 +585,7 @@ func _equip_test_weapon(weapon_type: int):
 
 
 func _try_place_trap() -> void:
-	if melee_state == MeleeState.DEAD:
+	if melee_state == MeleeState.DEAD or melee_state == MeleeState.DODGING:
 		return
 	var parent = get_parent()
 	if parent == null:
@@ -593,6 +597,28 @@ func _try_place_trap() -> void:
 	var traps = parent.get_node_or_null("TrapSystem")
 	if traps and traps.has_method("place_trap"):
 		traps.place_trap(self, "bear_trap")
+
+
+func _try_scavenge() -> void:
+	if melee_state == MeleeState.DEAD or melee_state == MeleeState.HEAVY_WINDUP:
+		return
+	if melee_state == MeleeState.LIGHT_ACTIVE or melee_state == MeleeState.HEAVY_ACTIVE:
+		return
+	var parent = get_parent()
+	if parent == null:
+		return
+	var scav = parent.get_node_or_null("ScavengingSystem")
+	if scav == null and parent.has_method("get") == false:
+		pass
+	if scav and scav.has_method("try_begin_scavenge"):
+		if scav.try_begin_scavenge(self):
+			# Slight slow while channeling — readable risk
+			velocity *= 0.35
+			print(name, " holding scavenge channel (stay still)")
+		return
+	# Fallback: scene-level helper
+	if parent.has_method("try_scavenge_for"):
+		parent.try_scavenge_for(self)
 
 
 
@@ -876,6 +902,14 @@ func take_damage(amount: int, attacker: Node):
 	if invuln_timer > 0.0 or melee_state == MeleeState.DODGING:
 		print(name, " dodged hit (i-frames)")
 		return
+
+	# Contested loot: hits interrupt channel
+	var parent_scav = get_parent()
+	if parent_scav:
+		var scav = parent_scav.get_node_or_null("ScavengingSystem")
+		if scav and scav.has_method("cancel_for_player") and scav.has_method("is_channeling"):
+			if scav.is_channeling(self):
+				scav.cancel_for_player(self)
 
 	if is_blocking or melee_state == MeleeState.BLOCKING:
 		# Perfect block: first perfect_block_window seconds fully mitigate

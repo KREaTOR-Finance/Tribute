@@ -6,7 +6,7 @@
 **Parity board:** `design/gauntlet/CULLING_PARITY.md`  
 **Mission card:** `design/gauntlet/MISSION_CARD.md`  
 **Gaps:** `design/gauntlet/PARITY_GAPS.md` (pre-army; code now ahead of doc)  
-**Updated:** 2026-08-06 (army W0–W6 landed + Integration Critic)
+**Updated:** 2026-08-06 (post-critic: dense cover, E-channel loot, last stand)
 
 ## Delivery surfaces
 
@@ -34,7 +34,10 @@
 | W4 HUD | DONE | TribunalHUD bars/timer/feed |
 | W5 Zone | DONE | Closing ring + damage |
 | W6 Juice | DONE | Sparks/blood, audio mix |
-| Integration Critic | **PASS** | Residual: denser cover (P1) |
+| Integration Critic | **PASS** | — |
+| Dense cover | DONE | 19 cover pieces / lanes |
+| Contested E-loot | DONE | 1.05s channel, interruptible |
+| Last stand | DONE | test_mode_respawn=false |
 
 ## Critic note
 

@@ -1,14 +1,11 @@
 # ScavengingSystem.gd
-# High-stakes looting that feeds the melee/crafting loop
-# From The Culling: risk vs reward, limited time, good loot changes fights
+# High-stakes looting — Culling risk/reward: contested E-channel, not free walk-in.
 
 extends Node
 class_name ScavengingSystem
 
 const PropSkinUtil = preload("res://scripts/PropSkins.gd")
 
-## Weighted pickup outcomes after a player touches a cache.
-## "heal" always restores HP; others are rolls with side effects.
 @export var loot_table: Array[Dictionary] = [
 	{"id": "heal", "name": "Medkit Scrap", "weight": 0.35, "heal": 20},
 	{"id": "bandage", "name": "Bandage", "weight": 0.25, "heal": 35},
@@ -17,24 +14,76 @@ const PropSkinUtil = preload("res://scripts/PropSkins.gd")
 ]
 
 @export var default_count: int = 10
-@export var arena_half_extent: float = 8.0
+@export var arena_half_extent: float = 9.0
+@export var interact_radius: float = 1.35
+@export var channel_time: float = 1.05  # vulnerable window while scavenging
+@export var channel_move_cancel: float = 0.55  # cancel if player moves too far mid-channel
 
 var spawned_loot: Array = []
+# player instance_id -> { "loot": Area3D, "t": float, "start": Vector3 }
+var _channels: Dictionary = {}
 
 signal loot_collected(item: Dictionary, player: Node)
+signal channel_started(player: Node, loot: Area3D)
+signal channel_cancelled(player: Node)
+signal channel_progress(player: Node, progress: float)
+
+
+func _process(delta: float) -> void:
+	if _channels.is_empty():
+		return
+	var done: Array = []
+	for pid in _channels.keys():
+		var ch: Dictionary = _channels[pid]
+		var player: Node = ch.get("player")
+		var loot: Area3D = ch.get("loot")
+		if player == null or not is_instance_valid(player) or loot == null or not is_instance_valid(loot):
+			done.append(pid)
+			continue
+		if player is PlayerController and player.melee_state == PlayerController.MeleeState.DEAD:
+			done.append(pid)
+			channel_cancelled.emit(player)
+			continue
+		# Cancel if moved too far from channel start (contested / panicked)
+		var start_pos: Vector3 = ch.get("start", player.global_position)
+		if player.global_position.distance_to(start_pos) > channel_move_cancel:
+			print(player.name, " scavenge cancelled (moved)")
+			channel_cancelled.emit(player)
+			done.append(pid)
+			continue
+		# Cancel if left interact radius
+		if player.global_position.distance_to(loot.global_position) > interact_radius + 0.35:
+			print(player.name, " scavenge cancelled (left cache)")
+			channel_cancelled.emit(player)
+			done.append(pid)
+			continue
+		ch["t"] = float(ch.get("t", 0.0)) + delta
+		_channels[pid] = ch
+		var prog := clampf(float(ch["t"]) / channel_time, 0.0, 1.0)
+		channel_progress.emit(player, prog)
+		# Subtle pulse on cache while channeling
+		if loot.has_node("LootMesh"):
+			var mi = loot.get_node("LootMesh")
+			if mi is Node3D:
+				var s := 1.0 + 0.08 * sin(Time.get_ticks_msec() * 0.02)
+				(mi as Node3D).scale = Vector3(s, s, s)
+		if float(ch["t"]) >= channel_time:
+			_complete_scavenge(player, loot)
+			done.append(pid)
+	for pid in done:
+		_channels.erase(pid)
 
 
 func spawn_loot_in_arena(arena: Node3D, count: int = -1) -> void:
 	if count < 0:
 		count = default_count
-	print("ScavengingSystem: spawning %d high-stakes caches..." % count)
+	print("ScavengingSystem: spawning %d contested caches (E to scavenge)..." % count)
 	for i in count:
 		var pos := Vector3(
 			randf_range(-arena_half_extent, arena_half_extent),
 			0.35,
 			randf_range(-arena_half_extent, arena_half_extent)
 		)
-		# Keep caches off spawn corners a bit
 		if pos.length() < 2.5:
 			pos = pos.normalized() * 3.5 if pos.length() > 0.01 else Vector3(3, 0.35, 2)
 		_spawn_cache_at(arena, pos)
@@ -45,13 +94,16 @@ func spawn_loot_at(arena: Node3D, pos: Vector3) -> void:
 
 
 func _spawn_cache_at(arena: Node3D, pos: Vector3) -> void:
-	# PropSkins gold cache mesh + Area3D; we own pickup (auto_pickup=false)
 	var loot: Area3D = PropSkinUtil.spawn_loot(arena, pos, false, 0)
 	if loot == null:
 		loot = _fallback_cache(arena, pos)
 	loot.set_meta("scav_cache", true)
+	loot.set_meta("channel_required", true)
+	# Track presence only — no free auto-loot
 	if not loot.body_entered.is_connected(_on_loot_body_entered):
 		loot.body_entered.connect(_on_loot_body_entered.bind(loot))
+	if not loot.body_exited.is_connected(_on_loot_body_exited):
+		loot.body_exited.connect(_on_loot_body_exited.bind(loot))
 	spawned_loot.append(loot)
 
 
@@ -68,6 +120,7 @@ func _fallback_cache(arena: Node3D, pos: Vector3) -> Area3D:
 	cs.shape = sp
 	loot.add_child(cs)
 	var mi := MeshInstance3D.new()
+	mi.name = "LootMesh"
 	var box := BoxMesh.new()
 	box.size = Vector3(0.55, 0.4, 0.7)
 	mi.mesh = box
@@ -84,20 +137,104 @@ func _fallback_cache(arena: Node3D, pos: Vector3) -> Area3D:
 
 
 func _on_loot_body_entered(body: Node, loot_node: Area3D) -> void:
+	if not is_instance_valid(loot_node) or not body.is_in_group("players"):
+		return
+	# Mark player as near this cache for E interact
+	if body is Node:
+		body.set_meta("near_loot", loot_node.get_instance_id())
+		body.set_meta("near_loot_node", loot_node)
+
+
+func _on_loot_body_exited(body: Node, loot_node: Area3D) -> void:
+	if not body is Node:
+		return
+	if body.has_meta("near_loot") and int(body.get_meta("near_loot")) == loot_node.get_instance_id():
+		body.remove_meta("near_loot")
+		if body.has_meta("near_loot_node"):
+			body.remove_meta("near_loot_node")
+	# Cancel channel if they left
+	var pid := body.get_instance_id()
+	if _channels.has(pid):
+		_channels.erase(pid)
+		channel_cancelled.emit(body)
+
+
+## Called by PlayerController on E / interact.
+func try_begin_scavenge(player: Node) -> bool:
+	if player == null or not is_instance_valid(player):
+		return false
+	if player is PlayerController and player.melee_state == PlayerController.MeleeState.DEAD:
+		return false
+	var pid := player.get_instance_id()
+	if _channels.has(pid):
+		return false  # already channeling
+	var loot: Area3D = _find_nearest_loot(player)
+	if loot == null:
+		return false
+	_channels[pid] = {
+		"player": player,
+		"loot": loot,
+		"t": 0.0,
+		"start": player.global_position,
+	}
+	channel_started.emit(player, loot)
+	print(player.name, " scavenging… (", channel_time, "s channel)")
+	return true
+
+
+func is_channeling(player: Node) -> bool:
+	return player != null and _channels.has(player.get_instance_id())
+
+
+func cancel_for_player(player: Node) -> void:
+	if player == null:
+		return
+	var pid := player.get_instance_id()
+	if _channels.has(pid):
+		_channels.erase(pid)
+		channel_cancelled.emit(player)
+		print(player.name, " scavenge cancelled (interrupted)")
+
+
+func get_channel_progress(player: Node) -> float:
+	if player == null or not _channels.has(player.get_instance_id()):
+		return 0.0
+	var ch: Dictionary = _channels[player.get_instance_id()]
+	return clampf(float(ch.get("t", 0.0)) / channel_time, 0.0, 1.0)
+
+
+func _find_nearest_loot(player: Node) -> Area3D:
+	# Prefer meta from area overlap
+	if player.has_meta("near_loot_node"):
+		var n = player.get_meta("near_loot_node")
+		if n is Area3D and is_instance_valid(n) and spawned_loot.has(n):
+			return n as Area3D
+	# Fallback: distance scan
+	var best: Area3D = null
+	var best_d := interact_radius
+	var ppos: Vector3 = player.global_position if player is Node3D else Vector3.ZERO
+	for loot in spawned_loot:
+		if not is_instance_valid(loot) or not loot is Area3D:
+			continue
+		var d: float = ppos.distance_to((loot as Area3D).global_position)
+		if d <= best_d:
+			best_d = d
+			best = loot as Area3D
+	return best
+
+
+func _complete_scavenge(player: Node, loot_node: Area3D) -> void:
 	if not is_instance_valid(loot_node):
 		return
-	if not body.is_in_group("players"):
-		return
-	# Only living players
-	if body is PlayerController and body.melee_state == PlayerController.MeleeState.DEAD:
-		return
-
 	var item := _roll_item()
-	_apply_loot(body, item)
-	loot_collected.emit(item, body)
-	print(body.name, " scavenged ", item.get("name", item.get("id", "?")), " [", item.get("id", ""), "]")
-
+	_apply_loot(player, item)
+	loot_collected.emit(item, player)
+	print(player.name, " scavenged ", item.get("name", item.get("id", "?")), " [", item.get("id", ""), "]")
 	spawned_loot.erase(loot_node)
+	if player.has_meta("near_loot"):
+		player.remove_meta("near_loot")
+	if player.has_meta("near_loot_node"):
+		player.remove_meta("near_loot_node")
 	loot_node.queue_free()
 
 

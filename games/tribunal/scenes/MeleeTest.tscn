@@ -33,7 +33,7 @@ script = ExtResource("1_test")
 [node name="ArenaManager" type="Node" parent="."]
 script = ExtResource("3_arena")
 match_duration = 300.0
-test_mode_respawn = true
+test_mode_respawn = false
 
 [node name="Ground" type="StaticBody3D" parent="."]
 
