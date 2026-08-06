@@ -1,8 +1,8 @@
-# Culling Parity Mission — Tribunal ≥ The Culling
+# Reference Parity Mission — Tribunal vs *The Culling* bar
 
-**Goal:** Tribunal (`games/tribunal`, Godot 4.3) is **equivalent or better** than original *The Culling* in every playable dimension of the vertical slice.
-
-**Reference:** Original Culling soul (melee commitment, scavenge risk, traps, zone, readable fights) + modern AAA juice/readability.
+**Product:** **Tribunal** (console-ready) · `games/tribunal` Godot slice · UE module `games/culling`  
+**Reference only:** *The Culling* — melee commitment, scavenge, traps, zone, readable fights (+ modern AAA juice).  
+**Not:** shipping under the Culling name. See `design/PRODUCT.md`.
 
 **Human = brake.** Agents never declare final victory.
 

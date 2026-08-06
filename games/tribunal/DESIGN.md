@@ -1,7 +1,10 @@
-# The Culling - Godot 4 Prototype Design
+# Tribunal — Godot design notes
+
+> **Product:** Tribunal · **Reference:** *The Culling* (feel bar only)
+
 
 ## The Dream (from user conversation)
-Rebuild **The Culling** as a real, complete, playable game in Godot 4 that could eventually go to console.
+Build **Tribunal** as a real, complete, playable game to the bar of **The Culling** in Godot 4 that could eventually go to console.
 
 Not a gamified app. Not a web toy. A real game with weighty melee combat, scavenging risk/reward, brutal traps, and high-stakes 1v1 (scaling to 16-player) battles.
 

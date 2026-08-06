@@ -6,9 +6,10 @@
 
 ## Goal
 
-Build a spiritual successor to **The Culling** — skill-based melee BR — at **modern AAA polish + console readiness**, without losing melee soul.
+Build **Tribunal** — a **console-ready** skill-based melee battle royale — at modern AAA polish, using ***The Culling*** only as the **combat/movement reference bar** (not the product name).
 
-**Reference:** Original The Culling combat & movement feel + modern AAA juice/readability.
+**Product:** Tribunal · **Reference:** *The Culling* soul + AAA juice + console budgets.  
+**Identity:** `design/PRODUCT.md`
 
 **Human = brake.** Agents do not declare final victory.
 

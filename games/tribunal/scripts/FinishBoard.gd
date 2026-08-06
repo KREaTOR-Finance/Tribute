@@ -127,6 +127,13 @@ func _build() -> void:
 	brand.add_theme_color_override("font_color", Color(0.65, 0.65, 0.7))
 	vbox.add_child(brand)
 
+	var ref_line := Label.new()
+	ref_line.text = "Melee bar: The Culling · Product: Tribunal"
+	ref_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ref_line.add_theme_font_size_override("font_size", 11)
+	ref_line.add_theme_color_override("font_color", Color(0.45, 0.45, 0.5))
+	vbox.add_child(ref_line)
+
 	_title = Label.new()
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.add_theme_font_size_override("font_size", 42)

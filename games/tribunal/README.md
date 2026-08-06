@@ -1,32 +1,48 @@
-# The Culling - Godot 4 (Real Game Prototype)
+# Tribunal — Godot playable slice
 
-**Goal**: A real, playable, shippable melee battle royale that captures the soul of the original The Culling.
+**Product:** Tribunal (console-ready melee BR)  
+**Reference:** *The Culling* combat soul (not the product title)
 
-Built with high-autonomy game fusion agent (grok-codex-deepseek-game-fusion).
+This folder is the **playable vertical slice** of Tribunal. Unreal production/console systems live under `games/culling/` but the **player-facing name is always Tribunal**.
 
-## Quick Start (when Godot is installed)
-1. Open this folder in Godot 4.3+
-2. Run the project
-3. WASD + Mouse to move
-4. Left Click = Light Jab
-5. Right Click = Heavy (windup)
-6. Space = Block
-7. F = Shove
-8. E = Interact (future)
-9. Q = Place Trap (future)
+## Run
 
-## Current State
-- project.godot configured
-- PlayerController.gd with first-pass weighty melee (light/heavy/block/shove)
-- ArenaManager stub
-- DESIGN.md with scope and philosophy
+```bash
+# From ForgeStudio root
+./dist/run-tribunal.sh
+
+# Or
+godot4 --path games/tribunal
+```
+
+Main scene: `scenes/MeleeTest.tscn` — finished courtyard, full round, finish board.
+
+## Round flow
+
+1. **INTRO** — fighters frozen, FIGHT banner  
+2. **FIGHT** — melee, E/H scavenge channel, Q/B traps, hunters, closing zone  
+3. **FINISH BOARD** — winner + K/SCAV/TRAP/HP · **R** rematch  
+
+## Controls (P1)
+
+| Input | Action |
+|-------|--------|
+| WASD + Mouse | Move / look |
+| LMB / RMB | Light / heavy |
+| Space / F | Block / shove |
+| C | Dodge |
+| E | Scavenge (hold channel) |
+| Q | Place trap |
+| R | Rematch (on finish board) |
+| TAB | Camera follow / fixed |
+
+P2: IJKL · U/O · P/; · V dodge · H scavenge · B trap.
 
 ## Philosophy
-- Melee feel is non-negotiable
-- Scavenging and traps must matter
-- Small scope, excellent core loop first
-- PC prototype → itch/Steam → console path
 
-See DESIGN.md for full details.
+- Melee feel is non-negotiable (*The Culling* bar).  
+- Scavenge and traps must matter.  
+- Finished environment + complete round = product slice, not prototype junk drawer.  
+- Path: slice → package → console (UE module under Tribunal branding).
 
-This project was kicked off using the standalone `grok-codex-deepseek-game-fusion` skill.
+See `../../design/PRODUCT.md` and `../../design/GDD.md`.

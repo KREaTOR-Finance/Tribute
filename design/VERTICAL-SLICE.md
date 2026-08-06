@@ -1,4 +1,6 @@
-# Vertical Slice — Tribune Melee Soul
+# Vertical Slice — Tribunal Melee Soul
+
+> **Product:** Tribunal · **Reference:** *The Culling* (feel only)
 
 ## Goal
 
