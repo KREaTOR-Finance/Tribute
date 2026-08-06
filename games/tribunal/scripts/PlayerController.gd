@@ -51,15 +51,22 @@ var health: int = 100
 var stamina: float = 100.0
 var is_exhausted: bool = false
 
-# === INTERNAL STATE ===
-var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+# === CULLING MELEE STATE MACHINE ===
+enum MeleeState { IDLE, LIGHT_ACTIVE, LIGHT_RECOVERY, HEAVY_WINDUP, HEAVY_ACTIVE, HEAVY_RECOVERY, BLOCKING, SHOVING, DEAD }
+var melee_state: MeleeState = MeleeState.IDLE
+var state_time: float = 0.0
+var hit_this_swing: Dictionary = {}  # instance_id -> true, once per swing
+var active_is_heavy: bool = false
+var local_hitstop: float = 0.0  # local slow (not global Engine.time_scale)
+
+# legacy flags kept in sync for any external reads
 var is_blocking: bool = false
 var is_winding_heavy: bool = false
 var windup_timer: float = 0.0
-
 var attack_cooldown_timer: float = 0.0
 var shove_cooldown_timer: float = 0.0
 
+var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var mesh_instance: MeshInstance3D
 var melee_hitbox: Area3D
 var camera: Camera3D
@@ -164,12 +171,16 @@ func _ready():
 	melee_hitbox = $MeleeHitbox
 	camera = get_node_or_null("Camera3D")
 
+	# Resolve shake: on self, parent, or scene camera (MeleeTest: Camera3D/CameraShake)
 	if has_node("CameraShake"):
 		camera_shake = $CameraShake
 	else:
 		var parent = get_parent()
-		if parent and parent.has_node("CameraShake"):
-			camera_shake = parent.get_node("CameraShake")
+		if parent:
+			if parent.has_node("CameraShake"):
+				camera_shake = parent.get_node("CameraShake")
+			elif parent.has_node("Camera3D/CameraShake"):
+				camera_shake = parent.get_node("Camera3D/CameraShake")
 
 	health = max_health
 	stamina = max_stamina
@@ -243,45 +254,104 @@ func _unhandled_input(event):
 	_handle_combat_input(event)
 
 
+func _set_melee_state(s: MeleeState, duration: float = 0.0) -> void:
+	melee_state = s
+	state_time = duration
+	is_blocking = (s == MeleeState.BLOCKING)
+	is_winding_heavy = (s == MeleeState.HEAVY_WINDUP)
+	if s == MeleeState.LIGHT_ACTIVE or s == MeleeState.HEAVY_ACTIVE or s == MeleeState.HEAVY_WINDUP:
+		hit_this_swing.clear()
+	if s == MeleeState.HEAVY_ACTIVE:
+		active_is_heavy = true
+	elif s == MeleeState.LIGHT_ACTIVE:
+		active_is_heavy = false
+
+
+func _can_act() -> bool:
+	return melee_state in [MeleeState.IDLE, MeleeState.LIGHT_RECOVERY, MeleeState.HEAVY_RECOVERY]
+
+
 func _physics_process(delta: float):
-	# Gravity
+	if melee_state == MeleeState.DEAD:
+		return
+	# Local hitstop: freeze combat tick presentation without global time_scale
+	var step := delta
+	if local_hitstop > 0.0:
+		local_hitstop = max(0.0, local_hitstop - delta)
+		step = delta * 0.15
+
 	if not is_on_floor():
-		velocity.y -= gravity * delta
+		velocity.y -= gravity * step
 
-	# Movement input (supports player 1 + player 2 hotseat keys)
 	var input_dir = _get_movement_input()
-	var speed_mul := 0.55 if is_blocking else (0.4 if is_winding_heavy else 1.0)
+	var speed_mul := 1.0
+	match melee_state:
+		MeleeState.BLOCKING:
+			speed_mul = 0.55
+		MeleeState.HEAVY_WINDUP, MeleeState.HEAVY_ACTIVE:
+			speed_mul = 0.4
+		MeleeState.LIGHT_ACTIVE:
+			speed_mul = 0.75
+		_:
+			speed_mul = 1.0
 	var direction = (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
-
 	if direction:
-		velocity.x = move_toward(velocity.x, direction.x * move_speed * speed_mul, acceleration * delta)
-		velocity.z = move_toward(velocity.z, direction.z * move_speed * speed_mul, acceleration * delta)
+		velocity.x = move_toward(velocity.x, direction.x * move_speed * speed_mul, acceleration * step)
+		velocity.z = move_toward(velocity.z, direction.z * move_speed * speed_mul, acceleration * step)
 	else:
-		velocity.x = move_toward(velocity.x, 0, friction * delta)
-		velocity.z = move_toward(velocity.z, 0, friction * delta)
-
+		velocity.x = move_toward(velocity.x, 0, friction * step)
+		velocity.z = move_toward(velocity.z, 0, friction * step)
 	move_and_slide()
 
-	# Timers
-	if attack_cooldown_timer > 0:
-		attack_cooldown_timer -= delta
 	if shove_cooldown_timer > 0:
-		shove_cooldown_timer -= delta
+		shove_cooldown_timer -= step
+	attack_cooldown_timer = 0.0 if _can_act() else 0.2
 
-	# Windup logic
-	if is_winding_heavy:
-		windup_timer += delta
-		if windup_timer >= heavy_attack_windup:
-			_perform_heavy_attack()
+	# Continuous active-frame traces (Culling soul)
+	if melee_state == MeleeState.LIGHT_ACTIVE or melee_state == MeleeState.HEAVY_ACTIVE:
+		_melee_shape_query(active_is_heavy)
+		if melee_hitbox:
+			melee_hitbox.monitoring = true
+	elif melee_hitbox:
+		melee_hitbox.monitoring = false
 
-	# Stamina regen (simple)
-	if not is_blocking and not is_winding_heavy and stamina < max_stamina:
-		stamina = min(stamina + stamina_regen * delta, max_stamina)
+	# State machine advance
+	if state_time > 0.0:
+		state_time -= step
+		if state_time <= 0.0:
+			_advance_melee_state()
+
+	# Stamina
+	if melee_state == MeleeState.BLOCKING and stamina > 0:
+		stamina -= block_stamina_cost * step * 0.5
+		stamina_changed.emit(stamina)
+		if stamina <= 0:
+			_set_melee_state(MeleeState.IDLE)
+	elif melee_state == MeleeState.IDLE and stamina < max_stamina:
+		stamina = min(stamina + stamina_regen * step, max_stamina)
 		stamina_changed.emit(stamina)
 
-	# Block drain
-	if is_blocking and stamina > 0:
-		stamina -= block_stamina_cost * delta * 0.5  # slow drain while holding
+
+func _advance_melee_state() -> void:
+	match melee_state:
+		MeleeState.LIGHT_ACTIVE:
+			_set_melee_state(MeleeState.LIGHT_RECOVERY, light_attack_cooldown * 0.7)
+		MeleeState.LIGHT_RECOVERY:
+			_set_melee_state(MeleeState.IDLE)
+		MeleeState.HEAVY_WINDUP:
+			_set_melee_state(MeleeState.HEAVY_ACTIVE, 0.14)
+			if mesh_instance:
+				var tween = create_tween()
+				tween.tween_property(mesh_instance, "scale", Vector3(1.12, 0.9, 1.12), 0.06)
+				tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.12)
+		MeleeState.HEAVY_ACTIVE:
+			_set_melee_state(MeleeState.HEAVY_RECOVERY, heavy_attack_cooldown * 0.65)
+		MeleeState.HEAVY_RECOVERY:
+			_set_melee_state(MeleeState.IDLE)
+		MeleeState.SHOVING:
+			_set_melee_state(MeleeState.IDLE)
+		_:
+			_set_melee_state(MeleeState.IDLE)
 
 func _get_movement_input() -> Vector2:
 	var input = Vector2.ZERO
@@ -301,28 +371,16 @@ func _get_movement_input() -> Vector2:
 	return input
 
 func _handle_combat_input(event):
-	if attack_cooldown_timer > 0 and not (event.is_action_released("block") or event.is_action_released("p2_block")):
-		# still allow block release / weapon swap while recovering
-		pass
-
-	# Light attack
-	if attack_cooldown_timer <= 0:
-		if (player_id == 1 and event.is_action_pressed("light_attack")) or (player_id == 2 and event.is_action_pressed("p2_light_attack")):
-			_perform_light_attack()
-		if (player_id == 1 and event.is_action_pressed("heavy_attack")) or (player_id == 2 and event.is_action_pressed("p2_heavy_attack")):
-			if stamina >= 25:
-				start_heavy_windup()
-
-	# Block
+	if (player_id == 1 and event.is_action_pressed("light_attack")) or (player_id == 2 and event.is_action_pressed("p2_light_attack")):
+		_perform_light_attack()
+	if (player_id == 1 and event.is_action_pressed("heavy_attack")) or (player_id == 2 and event.is_action_pressed("p2_heavy_attack")):
+		start_heavy_windup()
 	if (player_id == 1 and event.is_action_pressed("block")) or (player_id == 2 and event.is_action_pressed("p2_block")):
 		start_block()
 	elif (player_id == 1 and event.is_action_released("block")) or (player_id == 2 and event.is_action_released("p2_block")):
 		end_block()
-
-	# Shove
-	if attack_cooldown_timer <= 0:
-		if (player_id == 1 and event.is_action_pressed("shove")) or (player_id == 2 and event.is_action_pressed("p2_shove")):
-			_perform_shove()
+	if (player_id == 1 and event.is_action_pressed("shove")) or (player_id == 2 and event.is_action_pressed("p2_shove")):
+		_perform_shove()
 
 	# Weapon swap (Culling tool fantasy)
 	if player_id == 1:
@@ -350,51 +408,23 @@ func _equip_test_weapon(weapon_type: int):
 	# Note: In real game we would instance a proper scene with visuals
 
 func start_heavy_windup():
-	if is_winding_heavy or attack_cooldown_timer > 0:
+	if not _can_act() or stamina < 25:
 		return
-	is_winding_heavy = true
-	windup_timer = 0.0
-	stamina -= 25  # upfront cost
+	stamina -= 25
 	stamina_changed.emit(stamina)
-	print(name, " winding heavy attack...")
-
-	# Improved windup visual feedback (squash + slight rotation for commitment)
+	_set_melee_state(MeleeState.HEAVY_WINDUP, heavy_attack_windup)
+	print(name, " winding heavy (readable commit)...")
 	if mesh_instance:
 		var tween = create_tween()
-		tween.tween_property(mesh_instance, "scale", Vector3(1.2, 0.7, 1.2), heavy_attack_windup * 0.7)
-		tween.parallel().tween_property(mesh_instance, "rotation_degrees:y", 25.0 if player_id == 1 else -25.0, heavy_attack_windup * 0.7)
-
-func _perform_heavy_attack():
-	is_winding_heavy = false
-	windup_timer = 0.0
-
-	if melee_hitbox:
-		melee_hitbox.monitoring = true
-
-	if mesh_instance:
-		var tween = create_tween()
-		tween.tween_property(mesh_instance, "scale", Vector3(1.15, 0.85, 1.15), 0.08)
-		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.18)
-		tween.parallel().tween_property(mesh_instance, "rotation_degrees:y", 0.0, 0.2)
-
-	await get_tree().create_timer(0.08).timeout
-	_melee_shape_query(true)
-	await get_tree().create_timer(0.08).timeout
-
-	if melee_hitbox:
-		melee_hitbox.monitoring = false
-
-	attack_cooldown_timer = heavy_attack_cooldown
-	print(name, " heavy attack released!")
+		tween.tween_property(mesh_instance, "scale", Vector3(1.2, 0.7, 1.2), heavy_attack_windup * 0.85)
 
 func _melee_shape_query(heavy: bool) -> void:
-	## Reliable hit detect (Culling: hits must land) — complements Area hitbox
 	var space := get_world_3d().direct_space_state
 	var q := PhysicsShapeQueryParameters3D.new()
 	var sphere := SphereShape3D.new()
 	sphere.radius = 0.7 if heavy else 0.55
 	q.shape = sphere
-	var reach := 1.6 if heavy else 1.35
+	var reach := 1.65 if heavy else 1.35
 	q.transform = Transform3D(Basis(), global_position + Vector3(0, 1.0, 0) + (-global_transform.basis.z) * reach)
 	q.exclude = [get_rid()]
 	q.collision_mask = 0xFFFFFFFF
@@ -405,76 +435,53 @@ func _melee_shape_query(heavy: bool) -> void:
 
 
 func _perform_light_attack():
-	if is_winding_heavy:
-		return
-	if stamina < 6:
+	if not _can_act() or stamina < 6:
 		return
 	stamina -= 6
 	stamina_changed.emit(stamina)
-
-	if melee_hitbox:
-		melee_hitbox.monitoring = true
-
+	_set_melee_state(MeleeState.LIGHT_ACTIVE, 0.10)
 	if mesh_instance:
 		var tween = create_tween()
 		tween.tween_property(mesh_instance, "scale", Vector3(1.08, 1.08, 1.08), 0.03)
-		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.1)
-
-	await get_tree().create_timer(0.06).timeout
-	_melee_shape_query(false)
-	await get_tree().create_timer(0.04).timeout
-
-	if melee_hitbox:
-		melee_hitbox.monitoring = false
-
-	attack_cooldown_timer = light_attack_cooldown
+		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.08)
 	print(name, " light jab!")
 
 func start_block():
-	if is_blocking or stamina < block_stamina_cost:
+	if not _can_act() or stamina < block_stamina_cost * 0.5:
 		return
-	is_blocking = true
-	print(name, " blocking (", block_reduction * 100, "% reduction)")
-
-	# Visual block stance
+	_set_melee_state(MeleeState.BLOCKING)
+	print(name, " blocking")
 	if mesh_instance:
 		var tween = create_tween()
 		tween.tween_property(mesh_instance, "scale", Vector3(0.95, 1.15, 0.95), 0.1)
 
 func end_block():
-	is_blocking = false
-	print(name, " stopped blocking")
-
-	# Reset stance
+	if melee_state == MeleeState.BLOCKING:
+		_set_melee_state(MeleeState.IDLE)
 	if mesh_instance:
 		var tween = create_tween()
 		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.12)
 
 func _perform_shove():
-	if shove_cooldown_timer > 0 or stamina < 12:
+	if not _can_act() or shove_cooldown_timer > 0 or stamina < 12:
 		return
-
 	shove_cooldown_timer = shove_cooldown
 	stamina -= 12
 	stamina_changed.emit(stamina)
-
-	# Push away nearby bodies (existing shove knockback)
+	_set_melee_state(MeleeState.SHOVING, 0.18)
 	var space_state = get_world_3d().direct_space_state
 	var query = PhysicsShapeQueryParameters3D.new()
-	query.shape = $CollisionShape3D.shape
-	query.transform = global_transform
-	query.exclude = [self]
-
-	var results = space_state.intersect_shape(query)
-	for result in results:
+	var sphere := SphereShape3D.new()
+	sphere.radius = 1.0
+	query.shape = sphere
+	query.transform = Transform3D(Basis(), global_position + Vector3(0, 1, 0) + (-global_transform.basis.z) * 1.2)
+	query.exclude = [get_rid()]
+	for result in space_state.intersect_shape(query, 8):
 		var body = result.collider
 		if body and body is CharacterBody3D and body != self:
 			var push_dir = (body.global_position - global_position).normalized()
-			if push_dir.length() > 0:
-				body.velocity += push_dir * shove_force + Vector3(0, 3, 0)
+			body.velocity += push_dir * shove_force + Vector3(0, 3, 0)
 			print(name, " shoved ", body.name)
-
-	print(name, " shoved!")
 
 func apply_damage(amount: int, from: Node = null, knockback: float = 0.0) -> void:
 	# AI / systems entry point (Tribunal demo)
@@ -492,14 +499,17 @@ func heal_partial(amount: int) -> void:
 func _on_melee_hit(body):
 	if body == self or not body is CharacterBody3D:
 		return
+	if melee_state != MeleeState.LIGHT_ACTIVE and melee_state != MeleeState.HEAVY_ACTIVE:
+		return
+	var id: int = body.get_instance_id()
+	if hit_this_swing.has(id):
+		return  # once per swing (Culling)
+	hit_this_swing[id] = true
 
-	var damage = light_attack_damage
-	var is_heavy = is_winding_heavy or (attack_cooldown_timer > heavy_attack_cooldown - 0.3)
-	if is_heavy:
-		damage = heavy_attack_damage
+	var is_heavy = active_is_heavy or melee_state == MeleeState.HEAVY_ACTIVE
+	var damage = heavy_attack_damage if is_heavy else light_attack_damage
 	var kb = hit_knockback_force * (heavy_knockback_multiplier if is_heavy else 1.0)
 
-	# Hit players, hunters, any damageable CharacterBody3D
 	if body is PlayerController:
 		body.take_damage(damage, self)
 	elif body.has_method("apply_damage"):
@@ -512,9 +522,6 @@ func _on_melee_hit(body):
 	_apply_hit_feedback(is_heavy)
 	_spawn_hit_particles(body.global_position, is_heavy)
 
-	if melee_hitbox:
-		melee_hitbox.monitoring = false
-
 func _spawn_hit_particles(world_pos: Vector3, is_heavy: bool):
 	var particles_instance = HitParticlesScene.instantiate()
 	get_tree().current_scene.add_child(particles_instance)
@@ -522,22 +529,14 @@ func _spawn_hit_particles(world_pos: Vector3, is_heavy: bool):
 	particles_instance.spawn_hit(world_pos, Vector3.UP, is_heavy)
 
 func _apply_hit_feedback(is_heavy: bool):
-	# Hitstop (brief time slow)
-	var hitstop_duration = 0.09 if is_heavy else 0.05
-	Engine.time_scale = 0.15
-	await get_tree().create_timer(hitstop_duration, false, false, true).timeout  # ignore time scale
-	Engine.time_scale = 1.0
-
-	# Screenshake on the camera
+	# LOCAL hitstop (Culling-safe for 2P — no global Engine.time_scale)
+	local_hitstop = 0.09 if is_heavy else 0.05
 	if camera_shake:
 		camera_shake.add_trauma(0.65 if is_heavy else 0.35)
-
-	# Visual punch on attacker
 	if mesh_instance:
 		var tween = create_tween()
 		tween.tween_property(mesh_instance, "scale", Vector3(0.95, 1.1, 0.95), 0.04)
 		tween.tween_property(mesh_instance, "scale", Vector3(1, 1, 1), 0.12)
-
 	print(name, " landed hit! (heavy=", is_heavy, ")")
 
 func take_damage(amount: int, attacker: Node):
@@ -581,10 +580,10 @@ func take_damage(amount: int, attacker: Node):
 
 func die(attacker: Node):
 	print(name, " DIED to ", attacker.name if attacker else "unknown")
+	_set_melee_state(MeleeState.DEAD)
 	player_died.emit()
 	set_physics_process(false)
 	visible = false
-	# In a full game we would queue_free or respawn here
 
 func _process(delta):
 	# Expose stamina for UI

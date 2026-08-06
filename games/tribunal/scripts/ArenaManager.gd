@@ -30,16 +30,16 @@ func _process(delta: float):
 		# Sudden death or shrink zone later
 		pass
 
-func register_player(player: PlayerController):
+func register_player(player):
 	if player == null or player in players:
 		return
 	players.append(player)
 	players_alive.append(player)
-	# player_died has no args — bind the player ref
-	if not player.player_died.is_connected(_on_player_died.bind(player)):
-		player.player_died.connect(_on_player_died.bind(player))
+	if player.has_signal("player_died"):
+		if not player.player_died.is_connected(_on_player_died.bind(player)):
+			player.player_died.connect(_on_player_died.bind(player))
 
-func _on_player_died(player: PlayerController):
+func _on_player_died(player):
 	if player == null:
 		return
 	players_alive.erase(player)
@@ -52,13 +52,12 @@ func _on_player_died(player: PlayerController):
 		match_ended.emit(winner)
 		print("MATCH OVER — Winner:", winner.name if winner else "None (draw)")
 	
-	# Test-mode respawn for rapid melee iteration (remove for real matches)
 	if test_mode_respawn:
 		await get_tree().create_timer(2.5).timeout
 		if is_instance_valid(player) and player in players:
 			_respawn_player(player)
 
-func _respawn_player(player: PlayerController):
+func _respawn_player(player):
 	if not is_instance_valid(player):
 		return
 	
@@ -66,8 +65,11 @@ func _respawn_player(player: PlayerController):
 	player.set_physics_process(true)
 	player.health = player.max_health
 	player.stamina = player.max_stamina
-	player.is_blocking = false
-	player.is_winding_heavy = false
+	if player.has_method("_set_melee_state"):
+		player._set_melee_state(player.MeleeState.IDLE)
+	else:
+		player.is_blocking = false
+		player.is_winding_heavy = false
 	
 	# Random-ish spawn near original area (simple for test arena)
 	var spawn_offset = Vector3(randf_range(-3, 3), 1, randf_range(-3, 3))

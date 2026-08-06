@@ -9,9 +9,9 @@ const MatFactory = preload("res://scripts/TribunalMaterialFactory.gd")
 @export var use_hotseat: bool = true
 @export var capture_mouse_on_start: bool = true
 
-@onready var player1: PlayerController = $Player1
-@onready var player2: PlayerController = $Player2
-@onready var arena_manager: ArenaManager = $ArenaManager
+@onready var player1 = $Player1
+@onready var player2 = $Player2
+@onready var arena_manager = $ArenaManager
 @onready var ui_layer: CanvasLayer = $UI
 @onready var instructions_label: Label = $UI/InstructionsLabel
 @onready var p1_status: Label = $UI/P1Status
@@ -19,7 +19,7 @@ const MatFactory = preload("res://scripts/TribunalMaterialFactory.gd")
 @onready var p1_weapon_label: Label = $UI/P1Weapon
 @onready var p2_weapon_label: Label = $UI/P2Weapon
 @onready var camera: Camera3D = $Camera3D
-var follow_camera: FollowCamera = null
+var follow_camera = null
 
 func _ready():
 	print("=== TRIBUNAL — CULLING MELEE CORE ===")
@@ -160,7 +160,7 @@ func _update_status():
 		p2_status.text = "P2 HP: %d  STA: %d" % [player2.health, int(player2.stamina)]
 
 
-func _on_weapon_equipped(weapon_name: String, player: PlayerController, label: Label):
+func _on_weapon_equipped(weapon_name: String, player, label: Label):
 	if label:
 		label.text = "%s Weapon: %s" % [player.name, weapon_name]
 	var wtype = 1
@@ -173,7 +173,7 @@ func _on_weapon_equipped(weapon_name: String, player: PlayerController, label: L
 	_sync_weapon_visual(player, wtype)
 
 
-func _sync_weapon_visual(player: PlayerController, wtype: int):
+func _sync_weapon_visual(player, wtype: int):
 	if not player:
 		return
 	var hand = player.get_node_or_null("Hand")
@@ -183,7 +183,7 @@ func _sync_weapon_visual(player: PlayerController, wtype: int):
 			wv.set_weapon_type(wtype)
 
 
-func _on_player_died(player: PlayerController):
+func _on_player_died(player):
 	print(player.name, " eliminated (Culling rules)")
 
 
