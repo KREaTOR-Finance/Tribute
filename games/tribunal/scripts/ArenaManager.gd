@@ -15,6 +15,8 @@ var time_remaining: float = match_duration
 var players_alive: Array = []
 var players: Array = []  # full list
 var loot_spawned: int = 0
+var zone_system: Node = null
+var _zone_final_triggered: bool = false
 
 signal match_ended(winner: Node)
 signal player_eliminated(player: Node)
@@ -26,9 +28,16 @@ func _ready():
 
 func _process(delta: float):
 	time_remaining -= delta
-	if time_remaining <= 0 and players_alive.size() > 1:
-		# Sudden death or shrink zone later
-		pass
+	# Late match / overtime: accelerate the closing ring (Culling tension)
+	if zone_system and not _zone_final_triggered:
+		if time_remaining <= 60.0 and players_alive.size() > 1:
+			_zone_final_triggered = true
+			if zone_system.has_method("force_final_circle"):
+				zone_system.force_final_circle(45.0)
+				print("ArenaManager: final circle forced (timer pressure)")
+
+func register_zone(zone: Node) -> void:
+	zone_system = zone
 
 func register_player(player):
 	if player == null or player in players:
@@ -75,13 +84,17 @@ func _respawn_player(player):
 	var spawn_offset = Vector3(randf_range(-3, 3), 1, randf_range(-3, 3))
 	player.global_position = Vector3(-4, 1, -4) + spawn_offset if player.player_id == 1 else Vector3(4, 1, 4) + spawn_offset
 	
+	# Re-enter alive set so match flow stays consistent with spar testing
+	if player not in players_alive:
+		players_alive.append(player)
 	# Re-emit for UI
-	player.health_changed.emit(player.health)
-	player.stamina_changed.emit(player.stamina)
+	if player.has_signal("health_changed"):
+		player.health_changed.emit(player.health)
+	if player.has_signal("stamina_changed"):
+		player.stamina_changed.emit(player.stamina)
 	
 	print(player.name, " respawned for continued melee testing.")
 
 # TODO: Scavenging system (loot tables, high-stakes risk/reward)
 # TODO: Trap placement (player places, activates on enemies)
-# TODO: Zone shrink for tension in longer matches
 # TODO: Simple crafting (wood + scrap → spear, trap, bandage)

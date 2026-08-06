@@ -8,11 +8,18 @@ const MatFactory = preload("res://scripts/TribunalMaterialFactory.gd")
 const Catalog = preload("res://scripts/SkinCatalog.gd")
 const PropSkinUtil = preload("res://scripts/PropSkins.gd")
 const HunterScript = preload("res://scripts/HunterAI.gd")
+const HunterSpawnerScript = preload("res://scripts/HunterSpawner.gd")
+const ZoneSystemScript = preload("res://scripts/ZoneSystem.gd")
+const TribunalHUDScript = preload("res://scripts/TribunalHUD.gd")
+const ScavengingSystemScript = preload("res://scripts/ScavengingSystem.gd")
+const TrapSystemScript = preload("res://scripts/TrapSystem.gd")
 
 @export var use_hotseat: bool = true
 @export var capture_mouse_on_start: bool = true
 @export var spawn_spar_hunters: bool = true
 @export var spar_hunter_count: int = 2
+@export var enable_zone: bool = true
+@export var scav_loot_count: int = 10
 
 @onready var player1 = $Player1
 @onready var player2 = $Player2
@@ -25,6 +32,11 @@ const HunterScript = preload("res://scripts/HunterAI.gd")
 @onready var p2_weapon_label: Label = $UI/P2Weapon
 @onready var camera: Camera3D = $Camera3D
 var follow_camera = null
+var zone_system = null
+# Wired by W1 scavenge/traps when present; null-safe for headless smoke
+var trap_system = null
+var scavenging_system = null
+var tribunal_hud: CanvasLayer = null
 
 func _ready():
 	print("=== TRIBUNAL — CULLING MELEE CORE ===")
@@ -35,6 +47,7 @@ func _ready():
 	_apply_culling_environment()
 	_apply_pbr_to_arena()
 	_apply_prop_skins()
+	_setup_scavenge_and_traps()
 
 	if player1:
 		player1.player_id = 1
@@ -93,8 +106,72 @@ func _ready():
 	if spawn_spar_hunters:
 		_spawn_spar_hunters(spar_hunter_count)
 
+	if enable_zone:
+		_init_zone()
+
 	_setup_ui()
 	print("Fight. Mirror Culling. Prove the loop.")
+
+
+func _setup_scavenge_and_traps() -> void:
+	# Live Culling loop: scavenge caches + placeable traps in the test arena
+	scavenging_system = get_node_or_null("ScavengingSystem") as ScavengingSystem
+	if scavenging_system == null:
+		scavenging_system = ScavengingSystemScript.new()
+		scavenging_system.name = "ScavengingSystem"
+		add_child(scavenging_system)
+
+	trap_system = get_node_or_null("TrapSystem") as TrapSystem
+	if trap_system == null:
+		trap_system = TrapSystemScript.new()
+		trap_system.name = "TrapSystem"
+		add_child(trap_system)
+
+	if player1:
+		trap_system.ensure_kits(player1)
+	if player2:
+		trap_system.ensure_kits(player2)
+
+	if not scavenging_system.loot_collected.is_connected(_on_loot_collected):
+		scavenging_system.loot_collected.connect(_on_loot_collected)
+	if not trap_system.trap_triggered.is_connected(_on_trap_triggered):
+		trap_system.trap_triggered.connect(_on_trap_triggered)
+
+	scavenging_system.spawn_loot_in_arena(self, scav_loot_count)
+	print("MeleeTest: ScavengingSystem + TrapSystem live (loot=%d)" % scav_loot_count)
+
+
+func _on_loot_collected(item: Dictionary, player: Node) -> void:
+	var label := str(item.get("name", item.get("id", "loot")))
+	var applied := str(item.get("applied", ""))
+	print("MeleeTest scav: ", player.name if player else "?", " got ", label, " (", applied, ")")
+
+
+func _on_trap_triggered(trap_type: String, victim: Node) -> void:
+	print("MeleeTest trap: ", trap_type, " hit ", victim.name if victim else "?")
+
+
+func place_trap_for(player: PlayerController, trap_type: String = "bear_trap") -> void:
+	if trap_system == null or player == null:
+		return
+	trap_system.place_trap(player, trap_type)
+
+
+func _init_zone() -> void:
+	zone_system = ZoneSystemScript.new()
+	zone_system.name = "ZoneSystem"
+	zone_system.center = Vector3.ZERO
+	zone_system.start_radius = 22.0
+	zone_system.min_radius = 4.0
+	zone_system.shrink_duration = 180.0
+	zone_system.damage_per_tick = 4
+	zone_system.damage_interval = 0.5
+	zone_system.auto_start = true
+	zone_system.danger_tint_enabled = true
+	add_child(zone_system)
+	if arena_manager and arena_manager.has_method("register_zone"):
+		arena_manager.register_zone(zone_system)
+	print("MeleeTest: ZoneSystem active (Culling closing ring)")
 
 
 func _apply_culling_environment() -> void:
@@ -159,6 +236,32 @@ func _apply_prop_skins() -> void:
 
 
 func _spawn_spar_hunters(count: int) -> void:
+	# Prefer HunterSpawner (roles round-robin + catalog skins). Create if missing.
+	var spawner = get_node_or_null("HunterSpawner")
+	if spawner == null:
+		spawner = HunterSpawnerScript.new()
+		spawner.name = "HunterSpawner"
+		add_child(spawner)
+	if player1 and spawner.has_method("set_player_target"):
+		spawner.set_player_target(player1)
+	elif player1 and "player_target" in spawner:
+		spawner.player_target = player1
+	if spawner.has_method("spawn_wave"):
+		var wave = spawner.spawn_wave(count)
+		print("MeleeTest: spar hunters via HunterSpawner count=", wave.size())
+		# Critic residual: second wave so pressure doesn't collapse after first spar dies
+		get_tree().create_timer(45.0).timeout.connect(func ():
+			if not is_instance_valid(spawner):
+				return
+			var alive := 0
+			if spawner.has_method("alive_count"):
+				alive = int(spawner.alive_count())
+			var n := 3 if alive == 0 else 2
+			var w2 = spawner.spawn_wave(n)
+			print("MeleeTest: hunter wave 2 count=", w2.size(), " prior_alive=", alive)
+		)
+		return
+	# Legacy fallback (should not hit if HunterSpawner present)
 	var offsets := [
 		Vector3(6, 1.2, -4),
 		Vector3(-6, 1.2, -5),
@@ -179,28 +282,52 @@ func _spawn_spar_hunters(count: int) -> void:
 
 
 func _setup_ui():
-	if not ui_layer:
-		return
-	if instructions_label:
-		instructions_label.text = """TRIBUNAL — CULLING MELEE
-P1: WASD+Mouse | Shift sprint | LMB light · RMB heavy · Space block · F shove
-    1-3 weapons | [ ] body/weapon skin
-P2: IJKL | Ctrl sprint | U/O light/heavy · P block · ; shove · 4-6 weapons
+	# Culling-readable TribunalHUD owns vitals / timer / feed / banners.
+	# Legacy labels stay in the tree but are hidden so nothing softlocks.
+	if not has_node("TribunalHUD"):
+		tribunal_hud = TribunalHUDScript.new()
+		tribunal_hud.name = "TribunalHUD"
+		add_child(tribunal_hud)
+	else:
+		tribunal_hud = get_node("TribunalHUD") as CanvasLayer
 
-TAB cam follow/fixed · ESC mouse · R restart
-Spar hunters on · camera punch-in on swings · footfalls + hits"""
-	if not p1_weapon_label:
-		p1_weapon_label = Label.new()
-		p1_weapon_label.position = Vector2(20, 260)
-		ui_layer.add_child(p1_weapon_label)
-	if not p2_weapon_label:
-		p2_weapon_label = Label.new()
-		p2_weapon_label.position = Vector2(20, 285)
-		ui_layer.add_child(p2_weapon_label)
-	if p1_weapon_label:
-		p1_weapon_label.modulate = Color(1, 0.4, 0.4, 1)
-	if p2_weapon_label:
-		p2_weapon_label.modulate = Color(0.4, 0.6, 1, 1)
+	if tribunal_hud and tribunal_hud.has_method("bind_fighters"):
+		tribunal_hud.bind_fighters(player1, player2)
+	if tribunal_hud and tribunal_hud.has_method("bind_arena"):
+		tribunal_hud.bind_arena(arena_manager)
+
+	if ui_layer:
+		if instructions_label:
+			instructions_label.text = """P1 WASD+Mouse · Shift sprint · LMB/RMB · Space block · F shove · 1-3 wpn · Q trap
+P2 IJKL · Ctrl sprint · U/O · P block · ; shove · 4-6 wpn · B trap · TAB cam · ESC · R restart
+Scavenge gold caches · spar hunters · zone live"""
+			instructions_label.offset_left = 16
+			instructions_label.offset_top = 640
+			instructions_label.offset_right = 980
+			instructions_label.offset_bottom = 710
+			instructions_label.modulate = Color(0.75, 0.75, 0.78, 0.7)
+			instructions_label.add_theme_font_size_override("font_size", 12)
+		for legacy in [p1_status, p2_status, p1_weapon_label, p2_weapon_label]:
+			if legacy:
+				legacy.visible = false
+		if not p1_weapon_label:
+			p1_weapon_label = Label.new()
+			p1_weapon_label.visible = false
+			ui_layer.add_child(p1_weapon_label)
+		if not p2_weapon_label:
+			p2_weapon_label = Label.new()
+			p2_weapon_label.visible = false
+			ui_layer.add_child(p2_weapon_label)
+
+	if tribunal_hud and tribunal_hud.has_method("set_weapon_name"):
+		if player1 and "current_weapon" in player1 and player1.current_weapon:
+			tribunal_hud.set_weapon_name(1, str(player1.current_weapon.weapon_name))
+		elif player1:
+			tribunal_hud.set_weapon_name(1, "Sword")
+		if player2 and "current_weapon" in player2 and player2.current_weapon:
+			tribunal_hud.set_weapon_name(2, str(player2.current_weapon.weapon_name))
+		elif player2:
+			tribunal_hud.set_weapon_name(2, "Axe")
 
 
 func _process(_delta):
@@ -208,15 +335,25 @@ func _process(_delta):
 
 
 func _update_status():
+	# Legacy text vitals only if HUD missing and labels still visible
+	if tribunal_hud:
+		return
+	var p1_kits: int = trap_system.get_trap_kits(player1) if trap_system and player1 else 0
+	var p2_kits: int = trap_system.get_trap_kits(player2) if trap_system and player2 else 0
 	if p1_status and player1:
-		p1_status.text = "P1 HP: %d  STA: %d" % [player1.health, int(player1.stamina)]
+		p1_status.text = "P1 HP: %d  STA: %d  TRAP: %d" % [player1.health, int(player1.stamina), p1_kits]
 	if p2_status and player2:
-		p2_status.text = "P2 HP: %d  STA: %d" % [player2.health, int(player2.stamina)]
+		p2_status.text = "P2 HP: %d  STA: %d  TRAP: %d" % [player2.health, int(player2.stamina), p2_kits]
 
 
 func _on_weapon_equipped(weapon_name: String, player, label: Label):
 	if label:
 		label.text = "%s Weapon: %s" % [player.name, weapon_name]
+	if tribunal_hud and tribunal_hud.has_method("set_weapon_name") and player:
+		var pid := 1
+		if "player_id" in player:
+			pid = int(player.player_id)
+		tribunal_hud.set_weapon_name(pid, weapon_name)
 	var wtype = 1
 	if "Axe" in weapon_name or "axe" in weapon_name.to_lower():
 		wtype = 2
@@ -255,13 +392,18 @@ func _on_player_died(player):
 			col = skins[sid]["body"]
 	# Death mark + scav loot drop (Culling fallen-hunter props)
 	PropSkinUtil.spawn_death_mark(self, pos, col)
-	PropSkinUtil.spawn_loot(self, pos + Vector3(0.4, 0.3, 0.2))
+	if scavenging_system:
+		scavenging_system.spawn_loot_at(self, pos + Vector3(0.4, 0.0, 0.2))
+	else:
+		PropSkinUtil.spawn_loot(self, pos + Vector3(0.4, 0.3, 0.2))
 	print("MeleeTest: death mark + loot spawned at ", pos)
+	# Elim feed + winner banner handled by TribunalHUD signal binds
 
 
 func _on_match_ended(winner):
 	print("MATCH ENDED — Winner:", winner.name if winner else "Draw")
-	if instructions_label:
+	# Banner also via TribunalHUD.bind_arena(match_ended); keep fallback if HUD absent
+	if tribunal_hud == null and instructions_label:
 		instructions_label.text = "MATCH OVER — Winner: %s\nR to restart" % (winner.name if winner else "Draw")
 
 

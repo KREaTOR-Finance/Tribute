@@ -38,8 +38,14 @@ class_name PlayerController
 @export var heavy_attack_cooldown: float = 0.9
 @export var block_reduction: float = 0.65  # 0.65 = 65% damage reduction while blocking
 @export var block_stamina_cost: float = 18.0
+@export var perfect_block_window: float = 0.15  # first 0.15s of block = full mitigate
 @export var shove_force: float = 18.0
 @export var shove_cooldown: float = 1.0
+@export var dodge_stamina_cost: float = 15.0
+@export var dodge_duration: float = 0.28
+@export var dodge_iframe_duration: float = 0.20
+@export var dodge_burst_speed: float = 11.0
+@export var dodge_cooldown: float = 0.45
 
 # === RESOURCES (added in task 3 & 4) ===
 @export var max_health: int = 100
@@ -56,16 +62,21 @@ var stamina: float = 100.0
 var is_exhausted: bool = false
 
 # === CULLING MELEE STATE MACHINE ===
-enum MeleeState { IDLE, LIGHT_ACTIVE, LIGHT_RECOVERY, HEAVY_WINDUP, HEAVY_ACTIVE, HEAVY_RECOVERY, BLOCKING, SHOVING, DEAD }
+enum MeleeState { IDLE, LIGHT_ACTIVE, LIGHT_RECOVERY, HEAVY_WINDUP, HEAVY_ACTIVE, HEAVY_RECOVERY, BLOCKING, SHOVING, DODGING, DEAD }
 var melee_state: MeleeState = MeleeState.IDLE
 var state_time: float = 0.0
 var hit_this_swing: Dictionary = {}  # instance_id -> true, once per swing
 var active_is_heavy: bool = false
 var local_hitstop: float = 0.0  # local slow (not global Engine.time_scale)
+var invuln_timer: float = 0.0  # i-frames during dodge
+var block_hold_time: float = 0.0  # time spent in current block (for perfect window)
+var dodge_cooldown_timer: float = 0.0
+var dodge_dir: Vector3 = Vector3.ZERO
 
 # legacy flags kept in sync for any external reads
 var is_blocking: bool = false
 var is_winding_heavy: bool = false
+var is_dodging: bool = false
 var windup_timer: float = 0.0
 var attack_cooldown_timer: float = 0.0
 var shove_cooldown_timer: float = 0.0
@@ -293,6 +304,9 @@ func _set_melee_state(s: MeleeState, duration: float = 0.0) -> void:
 	state_time = duration
 	is_blocking = (s == MeleeState.BLOCKING)
 	is_winding_heavy = (s == MeleeState.HEAVY_WINDUP)
+	is_dodging = (s == MeleeState.DODGING)
+	if s == MeleeState.BLOCKING:
+		block_hold_time = 0.0
 	if s == MeleeState.LIGHT_ACTIVE or s == MeleeState.HEAVY_ACTIVE or s == MeleeState.HEAVY_WINDUP:
 		hit_this_swing.clear()
 	if s == MeleeState.HEAVY_ACTIVE:
@@ -323,6 +337,8 @@ func _sync_action_pose(s: MeleeState, duration: float) -> void:
 			_char_anim.set_pose(CharAnimScript.Pose.BLOCK)
 		MeleeState.SHOVING:
 			_char_anim.set_pose(CharAnimScript.Pose.SHOVE, duration if duration > 0.0 else 0.18)
+		MeleeState.DODGING:
+			_char_anim.set_pose(CharAnimScript.Pose.DODGE, duration if duration > 0.0 else dodge_duration)
 		MeleeState.DEAD:
 			_char_anim.set_pose(CharAnimScript.Pose.DEAD)
 		_:
@@ -382,23 +398,36 @@ func _physics_process(delta: float):
 			speed_mul = 0.82
 		MeleeState.SHOVING:
 			speed_mul = 0.7
+		MeleeState.DODGING:
+			speed_mul = 0.0  # burst-driven; ignore normal steer
 		MeleeState.LIGHT_RECOVERY, MeleeState.HEAVY_RECOVERY:
 			speed_mul = 0.88
 		_:
 			speed_mul = 1.0
 
-	var direction = (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
-	var accel := acceleration
-	if not is_on_floor():
-		accel *= air_control
-	var target_spd := base_spd * speed_mul
-	if direction:
-		velocity.x = move_toward(velocity.x, direction.x * target_spd, accel * step)
-		velocity.z = move_toward(velocity.z, direction.z * target_spd, accel * step)
+	if invuln_timer > 0.0:
+		invuln_timer = max(0.0, invuln_timer - step)
+	if dodge_cooldown_timer > 0.0:
+		dodge_cooldown_timer = max(0.0, dodge_cooldown_timer - step)
+
+	if melee_state == MeleeState.DODGING and dodge_dir.length_squared() > 0.01:
+		# Sideways/back burst — hold direction through dodge window
+		var burst := dodge_dir * dodge_burst_speed
+		velocity.x = burst.x
+		velocity.z = burst.z
 	else:
-		var fric := friction if is_on_floor() else friction * 0.15
-		velocity.x = move_toward(velocity.x, 0, fric * step)
-		velocity.z = move_toward(velocity.z, 0, fric * step)
+		var direction = (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
+		var accel := acceleration
+		if not is_on_floor():
+			accel *= air_control
+		var target_spd := base_spd * speed_mul
+		if direction:
+			velocity.x = move_toward(velocity.x, direction.x * target_spd, accel * step)
+			velocity.z = move_toward(velocity.z, direction.z * target_spd, accel * step)
+		else:
+			var fric := friction if is_on_floor() else friction * 0.15
+			velocity.x = move_toward(velocity.x, 0, fric * step)
+			velocity.z = move_toward(velocity.z, 0, fric * step)
 	move_and_slide()
 
 	# Feed locomotion to character art + footfalls
@@ -434,8 +463,9 @@ func _physics_process(delta: float):
 		if state_time <= 0.0:
 			_advance_melee_state()
 
-	# Stamina
+	# Stamina + perfect-block window clock
 	if melee_state == MeleeState.BLOCKING and stamina > 0:
+		block_hold_time += step
 		stamina -= block_stamina_cost * step * 0.5
 		stamina_changed.emit(stamina)
 		if stamina <= 0:
@@ -461,6 +491,10 @@ func _advance_melee_state() -> void:
 		MeleeState.HEAVY_RECOVERY:
 			_set_melee_state(MeleeState.IDLE)
 		MeleeState.SHOVING:
+			_set_melee_state(MeleeState.IDLE)
+		MeleeState.DODGING:
+			is_dodging = false
+			dodge_dir = Vector3.ZERO
 			_set_melee_state(MeleeState.IDLE)
 		_:
 			_set_melee_state(MeleeState.IDLE)
@@ -494,7 +528,16 @@ func _handle_combat_input(event):
 	if (player_id == 1 and event.is_action_pressed("shove")) or (player_id == 2 and event.is_action_pressed("p2_shove")):
 		_perform_shove()
 
-	# Weapon swap (Culling tool fantasy)
+	# Dodge / roll — P1: C or Alt, P2: V
+	if event is InputEventKey and event.pressed and not event.echo:
+		var kc: int = event.keycode
+		var pkc: int = event.physical_keycode
+		if player_id == 1 and (kc == KEY_C or pkc == KEY_C or kc == KEY_ALT or pkc == KEY_ALT):
+			_perform_dodge()
+		elif player_id == 2 and (kc == KEY_V or pkc == KEY_V):
+			_perform_dodge()
+
+	# Weapon swap (Culling tool fantasy) + trap place (Q / B)
 	if player_id == 1:
 		if event is InputEventKey and event.pressed:
 			if event.keycode == KEY_1:
@@ -507,6 +550,9 @@ func _handle_combat_input(event):
 				_cycle_character_skin()
 			elif event.keycode == KEY_BRACKETRIGHT:  # ]
 				_cycle_weapon_skin()
+			elif event.keycode == KEY_Q:
+				_try_place_trap()
+			# E reserved for future interact; loot is Area auto-pickup
 	elif player_id == 2:
 		if event is InputEventKey and event.pressed:
 			if event.keycode == KEY_4:
@@ -522,6 +568,8 @@ func _handle_combat_input(event):
 				pass
 			elif event.keycode == KEY_PERIOD:
 				_cycle_weapon_skin()
+			elif event.keycode == KEY_B:
+				_try_place_trap()
 
 func _equip_test_weapon(weapon_type: int):
 	var w = Weapon.new()
@@ -530,6 +578,22 @@ func _equip_test_weapon(weapon_type: int):
 	equip_weapon(w)
 	weapon_skin_id = SkinCat.default_weapon_skin(int(weapon_type) + 1)
 	_apply_weapon_skin_to_hand()
+
+
+func _try_place_trap() -> void:
+	if melee_state == MeleeState.DEAD:
+		return
+	var parent = get_parent()
+	if parent == null:
+		return
+	# MeleeTestScene helper or TrapSystem node
+	if parent.has_method("place_trap_for"):
+		parent.place_trap_for(self, "bear_trap")
+		return
+	var traps = parent.get_node_or_null("TrapSystem")
+	if traps and traps.has_method("place_trap"):
+		traps.place_trap(self, "bear_trap")
+
 
 
 func _resolve_follow_camera() -> void:
@@ -622,13 +686,32 @@ func start_heavy_windup():
 		_combat_audio.play_whoosh(true)
 	print(name, " winding heavy (readable commit)...")
 
+func _weapon_range_mul() -> float:
+	if current_weapon and current_weapon.has_method("get_range_mul"):
+		return current_weapon.get_range_mul()
+	if current_weapon:
+		return current_weapon.range_mul
+	return 1.0
+
+
+func _weapon_arc() -> float:
+	if current_weapon and current_weapon.has_method("get_arc"):
+		return current_weapon.get_arc()
+	if current_weapon:
+		return current_weapon.arc
+	return 1.0
+
+
 func _melee_shape_query(heavy: bool) -> void:
 	var space := get_world_3d().direct_space_state
 	var q := PhysicsShapeQueryParameters3D.new()
 	var sphere := SphereShape3D.new()
-	sphere.radius = 0.7 if heavy else 0.55
+	var rmul := _weapon_range_mul()
+	var amul := _weapon_arc()
+	# Sword mid, axe shorter wider, dagger shorter tighter
+	sphere.radius = (0.7 if heavy else 0.55) * clampf(amul, 0.5, 1.5)
 	q.shape = sphere
-	var reach := 1.65 if heavy else 1.35
+	var reach := (1.65 if heavy else 1.35) * rmul
 	q.transform = Transform3D(Basis(), global_position + Vector3(0, 1.0, 0) + (-global_transform.basis.z) * reach)
 	q.exclude = [get_rid()]
 	q.collision_mask = 0xFFFFFFFF
@@ -655,6 +738,7 @@ func _perform_light_attack():
 func start_block():
 	if not _can_act() or stamina < block_stamina_cost * 0.5:
 		return
+	block_hold_time = 0.0
 	_set_melee_state(MeleeState.BLOCKING)
 	if _combat_audio:
 		_combat_audio.play_block()
@@ -663,6 +747,35 @@ func start_block():
 func end_block():
 	if melee_state == MeleeState.BLOCKING:
 		_set_melee_state(MeleeState.IDLE)
+
+func _perform_dodge() -> void:
+	if not _can_act() or dodge_cooldown_timer > 0.0 or stamina < dodge_stamina_cost:
+		return
+	stamina -= dodge_stamina_cost
+	stamina_changed.emit(stamina)
+	dodge_cooldown_timer = dodge_cooldown
+	# Sideways / back preference: use move input, default back if none
+	var input_dir := _get_movement_input()
+	var local_dir := Vector3(input_dir.x, 0.0, input_dir.y)
+	if local_dir.length_squared() < 0.01:
+		local_dir = Vector3(0.0, 0.0, 1.0)  # back relative to facing
+	else:
+		# Bias away from pure forward so dodge is mostly side/back (Culling-style evade)
+		if local_dir.z < -0.2:
+			local_dir.z = 0.0  # cancel pure forward; keep lateral
+		if local_dir.length_squared() < 0.01:
+			local_dir = Vector3(0.0, 0.0, 1.0)
+	local_dir = local_dir.normalized()
+	dodge_dir = (transform.basis * local_dir).normalized()
+	invuln_timer = dodge_iframe_duration
+	_set_melee_state(MeleeState.DODGING, dodge_duration)
+	velocity.x = dodge_dir.x * dodge_burst_speed
+	velocity.z = dodge_dir.z * dodge_burst_speed
+	velocity.y = maxf(velocity.y, 1.5)
+	if _combat_audio:
+		_combat_audio.play_whoosh(false)
+	print(name, " dodge!")
+
 
 func _perform_shove():
 	if not _can_act() or shove_cooldown_timer > 0 or stamina < 12:
@@ -734,10 +847,22 @@ func _on_melee_hit(body):
 	_notify_camera_hit(is_heavy)
 
 func _spawn_hit_particles(world_pos: Vector3, is_heavy: bool):
+	var scene := get_tree().current_scene
+	if scene == null:
+		return
 	var particles_instance = HitParticlesScene.instantiate()
-	get_tree().current_scene.add_child(particles_instance)
-	particles_instance.global_position = world_pos + Vector3(0, 1.0, 0)  # chest height
+	scene.add_child(particles_instance)
+	# Chest-height offset applied inside HitParticles.spawn_hit
 	particles_instance.spawn_hit(world_pos, Vector3.UP, is_heavy)
+
+
+func _spawn_kill_particles() -> void:
+	var scene := get_tree().current_scene
+	if scene == null:
+		return
+	var particles_instance = HitParticlesScene.instantiate()
+	scene.add_child(particles_instance)
+	particles_instance.spawn_kill(global_position, Vector3.UP)
 
 func _apply_hit_feedback(is_heavy: bool):
 	# LOCAL hitstop (Culling-safe for 2P — no global Engine.time_scale)
@@ -747,7 +872,23 @@ func _apply_hit_feedback(is_heavy: bool):
 	print(name, " landed hit! (heavy=", is_heavy, ")")
 
 func take_damage(amount: int, attacker: Node):
-	if is_blocking:
+	# Dodge i-frames
+	if invuln_timer > 0.0 or melee_state == MeleeState.DODGING:
+		print(name, " dodged hit (i-frames)")
+		return
+
+	if is_blocking or melee_state == MeleeState.BLOCKING:
+		# Perfect block: first perfect_block_window seconds fully mitigate
+		if block_hold_time <= perfect_block_window:
+			print("PERFECT BLOCK")
+			amount = 0
+			if _combat_audio:
+				_combat_audio.play_block()
+			# Small pushback on attacker only if present
+			if attacker and attacker is CharacterBody3D:
+				var push_back = (attacker.global_position - global_position).normalized()
+				attacker.velocity += push_back * 4.0
+			return
 		amount = int(amount * (1.0 - block_reduction))
 
 	health = max(health - amount, 0)
@@ -807,6 +948,7 @@ func _collect_mesh_instances(node: Node, out: Array) -> void:
 func die(attacker: Node):
 	print(name, " DIED to ", attacker.name if attacker else "unknown")
 	_set_melee_state(MeleeState.DEAD)
+	_spawn_kill_particles()
 	if _char_anim:
 		_char_anim.set_pose(CharAnimScript.Pose.DEAD)
 	player_died.emit()

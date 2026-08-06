@@ -1,6 +1,7 @@
 extends CharacterBody3D
 class_name HunterAI
-## Aggressive sparring hunter for Tribunal — seeks player, light/heavy rhythm.
+## Culling-pressure hunter AI — role-based aggression for Tribunal.
+## Roles: RUSHER (close hard), BAITER (circle then heavy), SCAVENGER (loot then mid).
 ## First-class SkinCatalog character + weapon skins (OBJ preferred).
 
 signal died
@@ -10,16 +11,30 @@ const ObjLoader = preload("res://scripts/ObjMeshLoader.gd")
 const PropSkinUtil = preload("res://scripts/PropSkins.gd")
 const CharAnimScript = preload("res://scripts/CharacterAnimator.gd")
 const CombatAudioScript = preload("res://scripts/CombatAudio.gd")
+const HitParticlesScene = preload("res://scripts/HitParticles.tscn")
+
+enum Role {
+	RUSHER,     ## Aggressive gap-close, light-heavy rhythm
+	BAITER,     ## Circle/strafe then commit heavy
+	SCAVENGER,  ## Prefer loot positions if group "loot" exists, else mid aggression
+}
 
 @export var max_health: int = 100
 @export var move_speed: float = 4.8
 @export var attack_range: float = 2.2
+@export var role: Role = Role.RUSHER
 @export var team_color: Color = Color(0.85, 0.15, 0.1)
 @export var skin_id: String = ""
 @export var weapon_skin_id: String = Catalog.WSKIN_BLOODSTEEL
 @export var weapon_type: int = 1  # 1=sword default
 @export var drop_loot_on_death: bool = true
 @export var drop_death_mark: bool = true
+
+## Role timing knobs (applied by apply_role_profile / set_role)
+@export var light_attack_cd: float = 0.45
+@export var heavy_attack_cd: float = 0.9
+@export var heavy_chance: float = 0.28
+@export var heavy_windup: float = 0.55
 
 var health: int = 100
 var target: Node3D
@@ -32,6 +47,14 @@ var _anim = null
 var _audio = null
 var _alive: bool = true
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+
+# BAITER orbit state
+var _strafe_sign: float = 1.0
+var _strafe_timer: float = 0.0
+var _orbit_radius: float = 4.5
+# SCAVENGER loot target
+var _loot_target: Node3D = null
+var _loot_abandon_timer: float = 0.0
 
 # Cycle enemy skins for readable variety
 const HUNTER_SKINS := [
@@ -48,9 +71,48 @@ func _ready() -> void:
 	collision_mask = 1
 	if skin_id == "":
 		skin_id = HUNTER_SKINS[randi() % HUNTER_SKINS.size()]
+	apply_role_profile(role)
 	_build_body()
 	add_to_group("hunters")
 	add_to_group("damageable")
+	_strafe_sign = 1.0 if randf() < 0.5 else -1.0
+	_strafe_timer = randf_range(1.2, 2.4)
+
+
+func set_role(new_role: Role) -> void:
+	role = new_role
+	apply_role_profile(role)
+
+
+func apply_role_profile(r: Role) -> void:
+	## Tune move_speed / attack_range / attack timing per role.
+	match r:
+		Role.RUSHER:
+			move_speed = 5.9
+			attack_range = 2.35
+			light_attack_cd = 0.38
+			heavy_attack_cd = 0.75
+			heavy_chance = 0.18
+			heavy_windup = 0.42
+			_orbit_radius = 2.8
+		Role.BAITER:
+			move_speed = 4.4
+			attack_range = 2.5
+			light_attack_cd = 0.55
+			heavy_attack_cd = 1.05
+			heavy_chance = 0.55
+			heavy_windup = 0.62
+			_orbit_radius = 4.6
+		Role.SCAVENGER:
+			move_speed = 5.1
+			attack_range = 2.1
+			light_attack_cd = 0.48
+			heavy_attack_cd = 0.95
+			heavy_chance = 0.30
+			heavy_windup = 0.52
+			_orbit_radius = 3.5
+		_:
+			pass
 
 
 func set_skin(new_skin: String) -> void:
@@ -99,7 +161,7 @@ func _apply_character_skin() -> void:
 		_audio.name = "CombatAudio"
 		add_child(_audio)
 		_audio.bind(self)
-	print("HunterAI: skin=", skin_id, " mesh=", _mesh != null)
+	print("HunterAI: role=", Role.keys()[role], " skin=", skin_id, " mesh=", _mesh != null)
 
 
 func _build_weapon_visual() -> void:
@@ -189,6 +251,12 @@ func _die() -> void:
 	var death_pos := global_position
 	if _anim:
 		_anim.set_pose(CharAnimScript.Pose.DEAD)
+	# Kill particle burst (SYS-JUICE)
+	var scene := get_tree().current_scene
+	if scene:
+		var burst = HitParticlesScene.instantiate()
+		scene.add_child(burst)
+		burst.spawn_kill(death_pos, Vector3.UP)
 	died.emit()
 	# Death mark + loot prop skins (Culling fallen-hunter juice)
 	var parent = get_parent()
@@ -204,12 +272,77 @@ func _die() -> void:
 	tw.tween_callback(queue_free)
 
 
+func _resolve_target() -> void:
+	if target != null and is_instance_valid(target):
+		return
+	var players := get_tree().get_nodes_in_group("players")
+	if players.size() > 0:
+		target = players[0]
+
+
+func _nearest_loot() -> Node3D:
+	var loots := get_tree().get_nodes_in_group("loot")
+	var best: Node3D = null
+	var best_d := 1e9
+	for n in loots:
+		if n is Node3D and is_instance_valid(n):
+			var d: float = global_position.distance_to((n as Node3D).global_position)
+			if d < best_d:
+				best_d = d
+				best = n as Node3D
+	return best
+
+
+func _move_toward_point(point: Vector3, speed: float, delta: float) -> void:
+	var to := point - global_position
+	to.y = 0
+	var dist := to.length()
+	if dist > 0.15:
+		var dir := to.normalized()
+		look_at(global_position + dir, Vector3.UP)
+		velocity.x = dir.x * speed
+		velocity.z = dir.z * speed
+		if _anim:
+			_anim.set_move_blend(speed, move_speed, false)
+			_anim.set_pose(CharAnimScript.Pose.WALK)
+		if _audio:
+			_audio.tick_footsteps(delta, speed, false, is_on_floor())
+	else:
+		velocity.x = move_toward(velocity.x, 0, speed)
+		velocity.z = move_toward(velocity.z, 0, speed)
+		if _anim and not _winding:
+			_anim.set_move_blend(0.0, move_speed, false)
+			_anim.set_pose(CharAnimScript.Pose.IDLE)
+
+
+func _try_attack() -> void:
+	if _attack_cd > 0.0:
+		return
+	var use_heavy := randf() < heavy_chance
+	# BAITER commits heavy more when already in range after orbit
+	if role == Role.BAITER:
+		use_heavy = randf() < heavy_chance
+	if use_heavy:
+		_winding = true
+		_windup = heavy_windup
+		if _anim:
+			_anim.set_pose(CharAnimScript.Pose.HEAVY_WINDUP, heavy_windup)
+		_attack_cd = heavy_attack_cd
+	else:
+		if _anim:
+			_anim.set_pose(CharAnimScript.Pose.LIGHT_SWING, 0.12)
+		_do_attack(false)
+		_attack_cd = light_attack_cd
+
+
 func _physics_process(delta: float) -> void:
 	if not _alive:
 		return
 	if not is_on_floor():
 		velocity.y -= gravity * delta
 	_attack_cd = max(0.0, _attack_cd - delta)
+	_strafe_timer = max(0.0, _strafe_timer - delta)
+
 	if _winding:
 		_windup -= delta
 		if _anim:
@@ -221,16 +354,129 @@ func _physics_process(delta: float) -> void:
 			_do_attack(true)
 		move_and_slide()
 		return
-	if target == null or not is_instance_valid(target):
-		var players := get_tree().get_nodes_in_group("players")
-		if players.size() > 0:
-			target = players[0]
+
+	_resolve_target()
 	if target == null:
 		move_and_slide()
 		return
+
+	match role:
+		Role.RUSHER:
+			_ai_rusher(delta)
+		Role.BAITER:
+			_ai_baiter(delta)
+		Role.SCAVENGER:
+			_ai_scavenger(delta)
+		_:
+			_ai_rusher(delta)
+	move_and_slide()
+
+
+func _ai_rusher(delta: float) -> void:
+	## Aggressive: always close gap, attack ASAP, low heavy chance.
 	var to := target.global_position - global_position
 	to.y = 0
 	var dist := to.length()
+	if dist > 0.1:
+		look_at(global_position + to.normalized(), Vector3.UP)
+	if dist > attack_range * 0.92:
+		var dir := to.normalized()
+		# Slight sprint bias when far
+		var spd := move_speed * (1.12 if dist > 6.0 else 1.0)
+		velocity.x = dir.x * spd
+		velocity.z = dir.z * spd
+		if _anim:
+			_anim.set_move_blend(spd, move_speed, dist > 6.0)
+			_anim.set_pose(CharAnimScript.Pose.WALK)
+		if _audio:
+			_audio.tick_footsteps(delta, spd, dist > 6.0, is_on_floor())
+	else:
+		velocity.x = move_toward(velocity.x, 0, move_speed)
+		velocity.z = move_toward(velocity.z, 0, move_speed)
+		if _anim and not _winding:
+			_anim.set_move_blend(0.0, move_speed, false)
+			_anim.set_pose(CharAnimScript.Pose.IDLE)
+		_try_attack()
+
+
+func _ai_baiter(delta: float) -> void:
+	## Circle/strafe at orbit radius, then close for heavy.
+	var to := target.global_position - global_position
+	to.y = 0
+	var dist := to.length()
+	if dist > 0.1:
+		look_at(global_position + to.normalized(), Vector3.UP)
+
+	if _strafe_timer <= 0.0:
+		_strafe_sign *= -1.0
+		_strafe_timer = randf_range(1.0, 2.2)
+
+	if dist > _orbit_radius + 1.2:
+		# Approach into orbit band
+		_move_toward_point(target.global_position, move_speed, delta)
+	elif dist > attack_range + 0.15 and dist > _orbit_radius - 0.6:
+		# Strafe circle around target
+		var radial := to.normalized()
+		var tangent := Vector3(-radial.z, 0, radial.x) * _strafe_sign
+		# Hold orbit: slight radial correction + strafe
+		var hold := Vector3.ZERO
+		if dist > _orbit_radius + 0.35:
+			hold = radial
+		elif dist < _orbit_radius - 0.35:
+			hold = -radial
+		var dir := (tangent * 0.85 + hold * 0.35).normalized()
+		velocity.x = dir.x * move_speed
+		velocity.z = dir.z * move_speed
+		if _anim:
+			_anim.set_move_blend(move_speed, move_speed, false)
+			_anim.set_pose(CharAnimScript.Pose.WALK)
+		if _audio:
+			_audio.tick_footsteps(delta, move_speed, false, is_on_floor())
+		# Occasionally step in for a heavy commit
+		if _attack_cd <= 0.0 and randf() < 0.35 * delta * 8.0:
+			# Burst inward
+			velocity += radial * move_speed * 0.8
+	else:
+		# In attack pocket — prefer heavy
+		velocity.x = move_toward(velocity.x, 0, move_speed)
+		velocity.z = move_toward(velocity.z, 0, move_speed)
+		if _anim and not _winding:
+			_anim.set_move_blend(0.0, move_speed, false)
+			_anim.set_pose(CharAnimScript.Pose.IDLE)
+		_try_attack()
+
+
+func _ai_scavenger(delta: float) -> void:
+	## Prefer loot if present; otherwise mid aggression on player.
+	var to_player := target.global_position - global_position
+	to_player.y = 0
+	var player_dist := to_player.length()
+
+	# Abandon loot path if player is very close (forced engage)
+	if player_dist < attack_range + 1.2:
+		_loot_target = null
+		_ai_mid_aggression(delta, player_dist, to_player)
+		return
+
+	if _loot_target == null or not is_instance_valid(_loot_target):
+		_loot_target = _nearest_loot()
+		_loot_abandon_timer = 6.0
+
+	if _loot_target != null and is_instance_valid(_loot_target):
+		_loot_abandon_timer -= delta
+		var loot_pos: Vector3 = _loot_target.global_position
+		var loot_dist := global_position.distance_to(loot_pos)
+		if loot_dist > 1.4 and _loot_abandon_timer > 0.0:
+			_move_toward_point(loot_pos, move_speed * 1.05, delta)
+			return
+		# Reached loot area — clear and re-engage player
+		_loot_target = null
+
+	_ai_mid_aggression(delta, player_dist, to_player)
+
+
+func _ai_mid_aggression(delta: float, dist: float, to: Vector3) -> void:
+	## SCAVENGER fallback / mid pressure: close steadily, balanced attacks.
 	if dist > 0.1:
 		look_at(global_position + to.normalized(), Vector3.UP)
 	if dist > attack_range:
@@ -248,18 +494,7 @@ func _physics_process(delta: float) -> void:
 		if _anim and not _winding:
 			_anim.set_move_blend(0.0, move_speed, false)
 			_anim.set_pose(CharAnimScript.Pose.IDLE)
-		if _attack_cd <= 0.0:
-			if randf() < 0.28:
-				_winding = true
-				_windup = 0.55
-				if _anim:
-					_anim.set_pose(CharAnimScript.Pose.HEAVY_WINDUP, 0.55)
-			else:
-				if _anim:
-					_anim.set_pose(CharAnimScript.Pose.LIGHT_SWING, 0.12)
-				_do_attack(false)
-			_attack_cd = 0.9 if _winding else 0.45
-	move_and_slide()
+		_try_attack()
 
 
 func _do_attack(heavy: bool) -> void:

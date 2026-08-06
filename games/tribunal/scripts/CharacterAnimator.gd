@@ -14,6 +14,7 @@ enum Pose {
 	HEAVY_SWING,
 	BLOCK,
 	SHOVE,
+	DODGE,
 	HIT,
 	DEAD,
 }
@@ -107,7 +108,7 @@ func _apply_pose(delta: float) -> void:
 
 	# Locomotion under combat overlays
 	var loco := move_blend
-	if pose in [Pose.LIGHT_SWING, Pose.HEAVY_WINDUP, Pose.HEAVY_SWING, Pose.BLOCK, Pose.SHOVE, Pose.HIT, Pose.DEAD]:
+	if pose in [Pose.LIGHT_SWING, Pose.HEAVY_WINDUP, Pose.HEAVY_SWING, Pose.BLOCK, Pose.SHOVE, Pose.DODGE, Pose.HIT, Pose.DEAD]:
 		loco *= 0.35
 
 	if loco > 0.05:
@@ -185,6 +186,17 @@ func _apply_pose(delta: float) -> void:
 			arm_r_rot = Vector3(lerpf(0, 70, k), 0, -20)
 			hand_pos = _base_hand_pos + Vector3(0, 0.1, lerpf(0.0, -0.5, k))
 			hip_y = lerpf(0, -0.05, k)
+		Pose.DODGE:
+			# Quick tuck / roll lean
+			var k := _pose_k(0.28)
+			hip_y = lerpf(-0.05, -0.22, k)
+			torso_rot = Vector3(lerpf(10, 45, k), 0, lerpf(0, 18, k))
+			head_rot = Vector3(lerpf(0, 25, k), 0, 0)
+			arm_l_rot = Vector3(lerpf(10, 70, k), 0, 30)
+			arm_r_rot = Vector3(lerpf(10, 65, k), 0, -30)
+			leg_l_rot = Vector3(lerpf(10, 55, k), 0, 0)
+			leg_r_rot = Vector3(lerpf(-5, 40, k), 0, 0)
+			hand_pos = _base_hand_pos + Vector3(0.05, -0.1, 0.05)
 		Pose.HIT:
 			var k := clampf(_hit_flash / 0.14, 0.0, 1.0)
 			torso_rot = Vector3(-12 * k, 25 * k, 8 * k)

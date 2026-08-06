@@ -103,18 +103,20 @@ func _play(key: String, pitch_var: float = 0.08, vol_db: float = 0.0) -> void:
 
 
 func play_whoosh(heavy: bool = false) -> void:
-	_play("whoosh", 0.12, -2.0 if heavy else -6.0)
+	# Slightly under hits so connect always wins the mix
+	_play("whoosh", 0.12, -4.0 if heavy else -8.0)
 
 
 func play_hit(heavy: bool = false) -> void:
+	# Hits sit loud in the mix (Culling-readable connect)
 	if heavy:
-		_play("heavy", 0.06, 0.0)
+		_play("heavy", 0.06, 3.5)
 	else:
-		_play("light", 0.1, -2.0)
+		_play("light", 0.1, 1.5)
 
 
 func play_block() -> void:
-	_play("block", 0.05, -1.0)
+	_play("block", 0.05, 0.5)
 
 
 func tick_footsteps(delta: float, speed: float, sprinting: bool, on_floor: bool) -> void:
@@ -130,7 +132,8 @@ func tick_footsteps(delta: float, speed: float, sprinting: bool, on_floor: bool)
 	elif speed > 4.0:
 		interval = 0.34
 	_step_cd = interval
+	# Footsteps stay bed under combat SFX
 	if sprinting:
-		_play("step_run", 0.08, -8.0)
+		_play("step_run", 0.08, -16.0)
 	else:
-		_play("step", 0.1, -12.0)
+		_play("step", 0.1, -20.0)
