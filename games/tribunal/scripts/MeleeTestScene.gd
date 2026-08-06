@@ -552,6 +552,9 @@ func _setup_ui():
 		tribunal_hud.bind_fighters(player1, player2 if enable_p2 else null)
 	if tribunal_hud and tribunal_hud.has_method("bind_arena"):
 		tribunal_hud.bind_arena(arena_manager)
+	# Prime mats HUD after bind (starter wood/scrap already on bag)
+	if crafting_system and player1 and tribunal_hud and tribunal_hud.has_method("set_materials"):
+		tribunal_hud.set_materials(crafting_system.get_bag(player1))
 
 	if ui_layer:
 		if instructions_label:
