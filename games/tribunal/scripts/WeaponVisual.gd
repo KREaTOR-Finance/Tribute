@@ -1,7 +1,9 @@
 # WeaponVisual.gd — Tribunal weapon skins (Culling-readable tools)
+# Prefers first-class skin kit OBJs, then glb/obj fallbacks, then procedural.
 extends Node3D
 
 const Catalog = preload("res://scripts/SkinCatalog.gd")
+const ObjLoader = preload("res://scripts/ObjMeshLoader.gd")
 
 @export var weapon_type: int = 0  # 0=None, 1=Sword, 2=Axe, 3=Dagger
 @export var skin_id: String = ""
@@ -9,7 +11,7 @@ const Catalog = preload("res://scripts/SkinCatalog.gd")
 var current_mesh: Node3D = null
 var mesh_instance: MeshInstance3D = null
 
-# Optional mesh assets (used if imported); else procedural skinned geometry
+# Legacy mesh assets (used if skin kit OBJ missing)
 const WEAPON_PATHS = {
 	1: "res://assets/models/weapons/sword_simple.glb",
 	2: "res://assets/models/weapons/axe_simple.glb",
@@ -55,17 +57,38 @@ func _apply_visual(type: int):
 		skin_id = Catalog.default_weapon_skin(type)
 
 	var visual_node: Node3D = null
-	var asset_path = WEAPON_PATHS.get(type, "")
-	if asset_path != "" and ResourceLoader.exists(asset_path):
-		var packed = load(asset_path)
-		if packed is PackedScene:
-			visual_node = packed.instantiate()
-		elif packed is Mesh:
-			visual_node = MeshInstance3D.new()
-			(visual_node as MeshInstance3D).mesh = packed
+	var source := "procedural"
 
+	# 1) First-class skin kit OBJ (Blender export via build_skin_kit)
+	var obj_path := Catalog.weapon_mesh_path(skin_id, type)
+	if obj_path != "" and FileAccess.file_exists(obj_path):
+		var blade_mat = Catalog.make_weapon_blade_material(skin_id)
+		var mi = ObjLoader.make_mesh_instance(obj_path, blade_mat)
+		if mi:
+			# Skin kit weapons are authored blade-forward along +Y in Blender; orient to hand -Z
+			mi.name = "SkinKitWeapon"
+			mi.rotation_degrees = Vector3(90, 0, 0)
+			mi.position = Vector3(0, 0, -0.15)
+			visual_node = mi
+			source = "skin_obj"
+
+	# 2) Legacy packed/mesh assets
+	if visual_node == null:
+		var asset_path = WEAPON_PATHS.get(type, "")
+		if asset_path != "" and ResourceLoader.exists(asset_path):
+			var packed = load(asset_path)
+			if packed is PackedScene:
+				visual_node = packed.instantiate()
+				source = "glb"
+			elif packed is Mesh:
+				visual_node = MeshInstance3D.new()
+				(visual_node as MeshInstance3D).mesh = packed
+				source = "mesh_res"
+
+	# 3) Procedural fallback
 	if visual_node == null:
 		visual_node = _create_procedural_weapon(type)
+		source = "procedural"
 
 	if visual_node:
 		add_child(visual_node)
@@ -74,11 +97,12 @@ func _apply_visual(type: int):
 			mesh_instance = visual_node
 		else:
 			mesh_instance = _find_first_mesh(visual_node)
-		_paint_skin(visual_node, type)
-		visual_node.position = Vector3(0, 0, -0.55)
-		if type == 2:
-			visual_node.rotation_degrees = Vector3(0, 0, 15)
-		print("WeaponVisual: type=", type, " skin=", skin_id)
+		if source != "skin_obj":
+			_paint_skin(visual_node, type)
+			visual_node.position = Vector3(0, 0, -0.55)
+			if type == 2:
+				visual_node.rotation_degrees = Vector3(0, 0, 15)
+		print("WeaponVisual: type=", type, " skin=", skin_id, " src=", source)
 
 
 func _paint_skin(root: Node, type: int) -> void:

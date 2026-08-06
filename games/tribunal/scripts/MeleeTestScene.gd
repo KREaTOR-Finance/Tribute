@@ -5,9 +5,14 @@
 extends Node3D
 
 const MatFactory = preload("res://scripts/TribunalMaterialFactory.gd")
+const Catalog = preload("res://scripts/SkinCatalog.gd")
+const PropSkinUtil = preload("res://scripts/PropSkins.gd")
+const HunterScript = preload("res://scripts/HunterAI.gd")
 
 @export var use_hotseat: bool = true
 @export var capture_mouse_on_start: bool = true
+@export var spawn_spar_hunters: bool = false
+@export var spar_hunter_count: int = 2
 
 @onready var player1 = $Player1
 @onready var player2 = $Player2
@@ -29,6 +34,7 @@ func _ready():
 
 	_apply_culling_environment()
 	_apply_pbr_to_arena()
+	_apply_prop_skins()
 
 	if player1:
 		player1.player_id = 1
@@ -69,6 +75,9 @@ func _ready():
 		follow_camera = camera as FollowCamera
 		if follow_camera and player1:
 			follow_camera.set_target(player1)
+
+	if spawn_spar_hunters:
+		_spawn_spar_hunters(spar_hunter_count)
 
 	_setup_ui()
 	print("Fight. Mirror Culling. Prove the loop.")
@@ -116,17 +125,43 @@ func _apply_pbr_to_arena() -> void:
 		var mat = MatFactory.load_pbr("aerial_rocks_02")
 		mat.uv1_scale = Vector3(6, 6, 6)
 		(ground as MeshInstance3D).material_override = mat
-	for n in ["Crate1", "Crate2", "Barrel1", "Barrel2"]:
-		var node = get_node_or_null(n + "/MeshInstance3D")
-		if node and node is MeshInstance3D:
-			var folder := "wood_cabinet_worn_long" if n.begins_with("Crate") else "metal_plate"
-			var m = MatFactory.load_pbr(folder)
-			m.uv1_scale = Vector3(1.2, 1.2, 1.2)
-			(node as MeshInstance3D).material_override = m
 	# Scale ground mesh if tiny unit box
 	if ground and ground is MeshInstance3D:
 		(ground as MeshInstance3D).scale = Vector3(20, 1, 20)
 		(ground as MeshInstance3D).position.y = -0.5
+
+
+func _apply_prop_skins() -> void:
+	# First-class prop skins for arena cover (crate wood / iron barrel)
+	for n in ["Crate1", "Crate2"]:
+		var crate = get_node_or_null(n)
+		if crate and crate is Node3D:
+			PropSkinUtil.reskin_static_prop(crate as Node3D, Catalog.PSKIN_CRATE_WOOD)
+	for n in ["Barrel1", "Barrel2"]:
+		var barrel = get_node_or_null(n)
+		if barrel and barrel is Node3D:
+			PropSkinUtil.reskin_static_prop(barrel as Node3D, Catalog.PSKIN_BARREL_METAL)
+	print("MeleeTest: prop skins applied (crate_wood / barrel_metal)")
+
+
+func _spawn_spar_hunters(count: int) -> void:
+	var offsets := [
+		Vector3(6, 1.2, -4),
+		Vector3(-6, 1.2, -5),
+		Vector3(0, 1.2, 8),
+		Vector3(8, 1.2, 3),
+	]
+	var skin_ids: Array = Catalog.character_skins().keys()
+	for i in count:
+		var h = HunterScript.new()
+		h.position = offsets[i % offsets.size()]
+		h.skin_id = str(skin_ids[i % skin_ids.size()])
+		h.weapon_type = 1 + (i % 3)
+		h.weapon_skin_id = Catalog.default_weapon_skin(h.weapon_type)
+		if player1:
+			h.set_target(player1)
+		add_child(h)
+		print("MeleeTest: spar hunter ", i, " skin=", h.skin_id)
 
 
 func _setup_ui():
@@ -192,6 +227,21 @@ func _sync_weapon_visual(player, wtype: int):
 
 func _on_player_died(player):
 	print(player.name, " eliminated (Culling rules)")
+	if player == null or not is_instance_valid(player):
+		return
+	var pos: Vector3 = player.global_position
+	var col := Color(0.8, 0.1, 0.1)
+	if "player_id" in player and int(player.player_id) == 2:
+		col = Color(0.15, 0.35, 0.9)
+	elif "character_skin_id" in player:
+		var skins := Catalog.character_skins()
+		var sid := str(player.character_skin_id)
+		if skins.has(sid):
+			col = skins[sid]["body"]
+	# Death mark + scav loot drop (Culling fallen-hunter props)
+	PropSkinUtil.spawn_death_mark(self, pos, col)
+	PropSkinUtil.spawn_loot(self, pos + Vector3(0.4, 0.3, 0.2))
+	print("MeleeTest: death mark + loot spawned at ", pos)
 
 
 func _on_match_ended(winner):

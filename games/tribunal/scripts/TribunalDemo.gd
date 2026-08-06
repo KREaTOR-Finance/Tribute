@@ -5,6 +5,8 @@ extends Node3D
 const MatFactory = preload("res://scripts/TribunalMaterialFactory.gd")
 const PlayerScript = preload("res://scripts/TribunalPlayer.gd")
 const HunterScript = preload("res://scripts/HunterAI.gd")
+const Catalog = preload("res://scripts/SkinCatalog.gd")
+const PropSkinUtil = preload("res://scripts/PropSkins.gd")
 
 enum Phase { TITLE, TUTORIAL, COMBAT, VICTORY, DEFEAT }
 
@@ -188,23 +190,10 @@ func _build_player() -> void:
 func _spawn_loot() -> void:
 	loot_remaining = 0
 	for i in 6:
-		var loot := Area3D.new()
+		var pos := Vector3(randf_range(-20, 20), 0.4, randf_range(-20, 12))
+		# First-class loot prop skin (gold scavenge cache)
+		var loot := PropSkinUtil.spawn_loot(self, pos, false)
 		loot.name = "Loot%d" % i
-		loot.monitoring = true
-		loot.collision_layer = 0
-		loot.collision_mask = 1
-		var cs := CollisionShape3D.new()
-		var sp := SphereShape3D.new()
-		sp.radius = 0.8
-		cs.shape = sp
-		loot.add_child(cs)
-		var mi := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = Vector3(0.5, 0.35, 0.7)
-		mi.mesh = bm
-		mi.material_override = MatFactory.make_emissive(Color(1.0, 0.85, 0.2), 1.2)
-		loot.add_child(mi)
-		loot.position = Vector3(randf_range(-20, 20), 0.4, randf_range(-20, 12))
 		loot.body_entered.connect(func(b):
 			if b.is_in_group("players"):
 				loot_remaining = max(0, loot_remaining - 1)
@@ -217,17 +206,24 @@ func _spawn_loot() -> void:
 				_set_prompt("Loot secured. Hunters incoming.")
 				loot.queue_free()
 		)
-		add_child(loot)
 		loot_remaining += 1
 
 func _spawn_hunters(count: int) -> void:
+	var skin_ids: Array = Catalog.character_skins().keys()
 	for i in count:
 		var h = HunterScript.new()
 		h.position = Vector3(randf_range(-18, 18), 1.2, randf_range(-22, -8))
+		h.skin_id = str(skin_ids[i % skin_ids.size()])
+		h.weapon_type = 1 + (i % 3)
+		h.weapon_skin_id = Catalog.default_weapon_skin(h.weapon_type)
+		# Death drops their own death mark + loot; don't double-count combat loot
+		h.drop_loot_on_death = true
+		h.drop_death_mark = true
 		h.set_target(player)
 		h.died.connect(_on_hunter_died)
 		add_child(h)
 		hunters_alive += 1
+		print("TribunalDemo: hunter ", i, " skin=", h.skin_id)
 
 func _build_hud() -> void:
 	hud = CanvasLayer.new()
