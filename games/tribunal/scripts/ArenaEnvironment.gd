@@ -44,6 +44,8 @@ static func build(parent: Node3D) -> Dictionary:
 	_add_designed_cover(parent, wood, metal, stone)
 	_add_spawn_pads(parent, metal)
 	_add_ambient_trim(parent, stone)
+	_add_craft_benches(parent, wood, metal)
+	_add_scavenge_props(parent, wood, metal)
 
 	print("ArenaEnvironment: finished courtyard half=", HALF)
 	return {
@@ -52,6 +54,11 @@ static func build(parent: Node3D) -> Dictionary:
 		"loot_points": _loot_points(),
 		"spawn_p1": Vector3(-HALF + 3.5, FLOOR_Y + 1.0, -HALF + 3.5),
 		"spawn_p2": Vector3(HALF - 3.5, FLOOR_Y + 1.0, HALF - 3.5),
+		"craft_stations": [
+			Vector3(0, FLOOR_Y, 0),
+			Vector3(-7.5, FLOOR_Y, 0),
+			Vector3(7.5, FLOOR_Y, 0),
+		],
 	}
 
 
@@ -190,6 +197,56 @@ static func _add_ambient_trim(parent: Node3D, stone: Material) -> void:
 	for x in [-2.4, 2.4]:
 		_box(parent, "GatePostN_%d" % int(x), Vector3(x, _sit_y(1.1), HALF - 0.8), Vector3(0.45, 2.2, 0.45), stone)
 		_box(parent, "GatePostS_%d" % int(x), Vector3(x, _sit_y(1.1), -HALF + 0.8), Vector3(0.45, 2.2, 0.45), stone)
+
+
+static func _add_craft_benches(parent: Node3D, wood: Material, metal: Material) -> void:
+	var spots := [Vector3(0, 0, 0), Vector3(-7.5, 0, 0), Vector3(7.5, 0, 0)]
+	var i := 0
+	for pos in spots:
+		var root := Node3D.new()
+		root.name = "CraftBench%d" % i
+		root.position = pos
+		# Table + anvil (local coords; floor at y=0)
+		_box(root, "Table", Vector3(0, 0.45, 0), Vector3(1.6, 0.9, 0.7), wood)
+		_box(root, "Anvil", Vector3(0, 0.95, 0), Vector3(0.7, 0.2, 0.45), metal)
+		var area := Area3D.new()
+		area.set_script(load("res://scripts/CraftStation.gd"))
+		area.name = "Station"
+		area.position = Vector3(0, 0.5, 0)
+		var cs := CollisionShape3D.new()
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(2.2, 1.6, 2.0)
+		cs.shape = shape
+		area.add_child(cs)
+		root.add_child(area)
+		var lamp := MeshInstance3D.new()
+		var sph := SphereMesh.new()
+		sph.radius = 0.12
+		lamp.mesh = sph
+		lamp.position = Vector3(0, 1.55, 0)
+		var lm := StandardMaterial3D.new()
+		lm.albedo_color = Color(1.0, 0.75, 0.2)
+		lm.emission_enabled = true
+		lm.emission = Color(1.0, 0.7, 0.15)
+		lm.emission_energy_multiplier = 2.0
+		lamp.material_override = lm
+		root.add_child(lamp)
+		parent.add_child(root)
+		i += 1
+	print("ArenaEnvironment: craft benches=", spots.size())
+
+
+static func _add_scavenge_props(parent: Node3D, wood: Material, metal: Material) -> void:
+	var props := [
+		Vector3(2.5, 0.4, 7.5), Vector3(-2.5, 0.4, 7.5),
+		Vector3(2.5, 0.4, -7.5), Vector3(-2.5, 0.4, -7.5),
+		Vector3(9.0, 0.5, 4.0), Vector3(-9.0, 0.5, -4.0),
+	]
+	var i := 0
+	for p in props:
+		var mat: Material = wood if i < 4 else metal
+		_box(parent, "PropCrate%d" % i, p, Vector3(0.9, 0.8, 0.9), mat)
+		i += 1
 
 
 static func _loot_points() -> Array:

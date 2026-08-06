@@ -6,17 +6,20 @@
 **Ship module:** `games/culling` (UE; still branded Tribunal)  
 **Identity:** `design/PRODUCT.md`  
 **Updated:** 2026-08-06  
-**Vertical slice locked:** **VS-1 Humanoid Wave Gauntlet** — `design/systems/SYS-AI-WAVES.md`
+**Vertical slice:** **Gauntlet** mode — `design/systems/SYS-AI-WAVES.md` + crafting/armor/props
 
-## VS-1 (first vertical slice)
+## Gauntlet mode (first vertical slice)
 
 | | |
 |--|--|
-| Fantasy | Humanoid player vs waves of humanoid AI (Culling contestant pressure) |
-| Spec | `design/systems/SYS-AI-WAVES.md` |
-| Status | **WaveDirector SHIPPED** · critic PASS (structure) · playtest still open |
+| Game | **Tribunal** |
+| Mode | **Gauntlet** |
+| Fantasy | Humanoid player vs waves of humanoid AI + Culling craft/armor/props |
+| Spec | `SYS-AI-WAVES` + `CraftingSystem` |
+| Status | WaveDirector + craft/armor/benches SHIPPED |
 | Win | Clear wave schedule `[2,3,4,5]` |
 | Lose | Player eliminated |
+| Craft | wood/scrap/cloth/bone → armor, weapons, traps at bench (T) |
 
 ## Naming lock
 

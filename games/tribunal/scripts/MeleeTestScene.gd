@@ -19,14 +19,16 @@ const GamepadBootstrapScript = preload("res://scripts/GamepadBootstrap.gd")
 const VisualPolishScript = preload("res://scripts/VisualPolish.gd")
 const ReplaySystemScript = preload("res://scripts/ReplaySystem.gd")
 const WaveDirectorScript = preload("res://scripts/WaveDirector.gd")
+const CraftingSystemScript = preload("res://scripts/CraftingSystem.gd")
 
 @export var use_hotseat: bool = true
 @export var capture_mouse_on_start: bool = true
-@export var enable_vs1_waves: bool = true  # VS-1 Humanoid Wave Gauntlet (SYS-AI-WAVES)
+@export var enable_gauntlet_mode: bool = true  # Gauntlet = wave mode (game is Tribunal)
 @export var enable_zone: bool = true
 @export var scav_loot_count: int = 14
 @export var last_stand_mode: bool = true
 @export var intro_countdown_seconds: float = 3.4
+@export var enable_p2: bool = false  # Gauntlet default: solo humanoid vs AI
 
 @onready var player1 = $Player1
 @onready var player2 = $Player2
@@ -47,23 +49,25 @@ var finish_board = null
 var replay_system = null
 var hunter_spawner = null
 var wave_director = null
+var crafting_system = null
 var _arena_info: Dictionary = {}
 var _round_frozen: bool = true  # intro freeze
 var _fight_elapsed: float = 0.0
 var _match_ended_handled: bool = false
 
 func _ready():
-	print("=== TRIBUNAL — VS-1 HUMANOID WAVE GAUNTLET ===")
+	print("=== TRIBUNAL · MODE: GAUNTLET ===")
 	GamepadBootstrapScript.ensure()
 	if capture_mouse_on_start:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 	_apply_culling_environment()
 	VisualPolishScript.apply_world(self)
-	# Coherent finished courtyard (floor, walls, designed cover, spawn pads)
+	# Courtyard + craft benches + props
 	_arena_info = ArenaEnvUtil.build(self)
 
 	_setup_scavenge_and_traps()
+	_setup_crafting()
 	_configure_match_stakes()
 	_setup_fighters()
 	_place_fighters_on_pads()
@@ -71,7 +75,7 @@ func _ready():
 	_setup_ui()
 	_setup_finish_board()
 
-	if enable_vs1_waves:
+	if enable_gauntlet_mode:
 		_setup_wave_director()
 	if enable_zone:
 		_init_zone()
@@ -82,10 +86,47 @@ func _ready():
 	if arena_manager and arena_manager.has_signal("match_started"):
 		if not arena_manager.match_started.is_connected(_on_match_started):
 			arena_manager.match_started.connect(_on_match_started)
-	print("Tribunal VS-1: INTRO → humanoid waves [2,3,4,5] → finish board")
+	print("Tribunal Gauntlet: INTRO → craft/scavenge → waves [2,3,4,5] → finish board")
+
+
+func _setup_crafting() -> void:
+	crafting_system = get_node_or_null("CraftingSystem")
+	if crafting_system == null:
+		crafting_system = CraftingSystemScript.new()
+		crafting_system.name = "CraftingSystem"
+		add_child(crafting_system)
+	if player1:
+		crafting_system.ensure_bag(player1)
+		# Starter scraps so first craft is reachable
+		crafting_system.add_material(player1, "wood", 1)
+		crafting_system.add_material(player1, "scrap", 1)
+	if player2 and enable_p2:
+		crafting_system.ensure_bag(player2)
+	if crafting_system.has_signal("crafted") and not crafting_system.crafted.is_connected(_on_crafted):
+		crafting_system.crafted.connect(_on_crafted)
+	if crafting_system.has_signal("materials_changed") and not crafting_system.materials_changed.is_connected(_on_mats_changed):
+		crafting_system.materials_changed.connect(_on_mats_changed)
+	print("Gauntlet: CraftingSystem live (wood/scrap/cloth/bone → armor/weapons/traps)")
+
+
+func _on_crafted(player: Node, recipe_id: String, _result: Dictionary) -> void:
+	if tribunal_hud and tribunal_hud.has_method("push_feed"):
+		tribunal_hud.push_feed("%s · crafted %s" % [player.name, recipe_id])
+
+
+func _on_mats_changed(player: Node, bag: Dictionary) -> void:
+	if tribunal_hud and tribunal_hud.has_method("set_materials") and player == player1:
+		tribunal_hud.set_materials(bag)
 
 
 func _setup_fighters() -> void:
+	if player2 and not enable_p2:
+		player2.visible = false
+		player2.set_physics_process(false)
+		player2.set_process(false)
+		player2.set_process_unhandled_input(false)
+		if player2.has_node("CollisionShape3D"):
+			player2.get_node("CollisionShape3D").disabled = true
 	if player1:
 		player1.player_id = 1
 		var w1 = Weapon.new()
@@ -100,7 +141,7 @@ func _setup_fighters() -> void:
 		_sync_weapon_visual(player1, 1)
 		if not player1.player_died.is_connected(_on_player_died.bind(player1)):
 			player1.player_died.connect(_on_player_died.bind(player1))
-	if player2:
+	if player2 and enable_p2:
 		player2.player_id = 2
 		var w2 = Weapon.new()
 		w2.weapon_type = Weapon.WeaponType.AXE
@@ -118,7 +159,7 @@ func _setup_fighters() -> void:
 	if arena_manager:
 		if player1:
 			arena_manager.register_player(player1)
-		if player2:
+		if player2 and enable_p2:
 			arena_manager.register_player(player2)
 		if not arena_manager.match_ended.is_connected(_on_match_ended):
 			arena_manager.match_ended.connect(_on_match_ended)
@@ -245,7 +286,7 @@ func _setup_scavenge_and_traps() -> void:
 
 	if player1:
 		trap_system.ensure_kits(player1)
-	if player2:
+	if player2 and enable_p2:
 		trap_system.ensure_kits(player2)
 
 	if not scavenging_system.loot_collected.is_connected(_on_loot_collected):
@@ -508,13 +549,14 @@ func _setup_ui():
 		tribunal_hud = get_node("TribunalHUD") as CanvasLayer
 
 	if tribunal_hud and tribunal_hud.has_method("bind_fighters"):
-		tribunal_hud.bind_fighters(player1, player2)
+		tribunal_hud.bind_fighters(player1, player2 if enable_p2 else null)
 	if tribunal_hud and tribunal_hud.has_method("bind_arena"):
 		tribunal_hud.bind_arena(arena_manager)
 
 	if ui_layer:
 		if instructions_label:
-			instructions_label.text = """TRIBUNAL  ·  P1: stick/WASD · RS look · X/Y light/heavy · LB block · RB shove · B dodge · A scavenge · RS-click trap
+			instructions_label.text = """TRIBUNAL · GAUNTLET  ·  E scavenge mats · T craft at bench · Q trap · waves of AI
+P1: WASD/stick · fight · Judgement Chain · clear waves [2,3,4,5] to win
 Judgement Chain: land hits → JUDGEMENT heavy  ·  R rematch  ·  G replay"""
 			instructions_label.offset_left = 16
 			instructions_label.offset_top = 640

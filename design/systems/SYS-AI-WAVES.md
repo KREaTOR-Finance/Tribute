@@ -1,8 +1,9 @@
 # SYS-AI-WAVES — Culling solo AI pressure (found → interpreted)
 
-**Product:** Tribunal  
+**Game:** Tribunal  
+**Mode:** **Gauntlet** (first vertical slice)  
 **Reference:** *The Culling* (Xaviant) solo / bot-filled play  
-**Status:** IDENTIFIED + INTERPRETED — **this is Vertical Slice 1**  
+**Status:** WaveDirector live · craft/armor/props in Gauntlet  
 **Updated:** 2026-08-06
 
 ---

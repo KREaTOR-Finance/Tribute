@@ -2,7 +2,8 @@
 
 | Role | Name |
 |------|------|
-| **Product (ships)** | **Tribunal** |
+| **Product / game (ships)** | **Tribunal** |
+| **Flagship mode** | **Gauntlet** (solo humanoid vs AI waves + craft) |
 | **Reference (feel bar only)** | *The Culling* (original) |
 | **Repository** | [KREaTOR-Finance/Tribute](https://github.com/KREaTOR-Finance/Tribute) |
 | **Godot playable slice** | `games/tribunal/` |

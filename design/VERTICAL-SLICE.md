@@ -1,16 +1,24 @@
-# Vertical Slice — Tribunal VS-1
+# Vertical Slice — Tribunal · Mode: Gauntlet
 
-> **Product:** Tribunal · **Reference:** *The Culling* (feel only)
+> **Game:** **Tribunal** · **Mode:** **Gauntlet** · **Reference:** *The Culling* (feel only)
 
-## VS-1 LOCKED — Humanoid Wave Gauntlet
+## Gauntlet mode (first vertical slice)
 
-**Players as humanoids battle waves of humanoid AI.**
+**Humanoid player battles waves of humanoid AI**, with Culling-style **scavenge → craft → armor/weapons/traps**.
 
-Full specification: **`design/systems/SYS-AI-WAVES.md`** (found system + interpreted parameters).
+Full AI/wave specification: **`design/systems/SYS-AI-WAVES.md`**.
+
+### Naming
+
+| Name | Means |
+|------|--------|
+| **Tribunal** | The game |
+| **Gauntlet** | This mode (solo wave contest) |
+| *The Culling* | Reference bar only |
 
 ### One sentence
 
-Solo (or local 2P assist) humanoid fighter clears escalating waves of humanoid hunter AI in a finished arena, or dies — full round with finish board.
+In **Gauntlet** mode, a humanoid Tribunal fighter scavenges materials, crafts armor and tools, and clears escalating humanoid AI waves — or dies.
 
 ### Playable fantasy (Culling-derived)
 

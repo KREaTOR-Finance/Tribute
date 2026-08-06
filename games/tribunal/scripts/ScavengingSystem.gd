@@ -6,11 +6,14 @@ class_name ScavengingSystem
 
 const PropSkinUtil = preload("res://scripts/PropSkins.gd")
 
+## Culling-style: materials for crafting + occasional direct gear
 @export var loot_table: Array[Dictionary] = [
-	{"id": "heal", "name": "Medkit Scrap", "weight": 0.35, "heal": 20},
-	{"id": "bandage", "name": "Bandage", "weight": 0.25, "heal": 35},
-	{"id": "weapon", "name": "Fallen Weapon", "weight": 0.22},
-	{"id": "trap_kit", "name": "Trap Kit", "weight": 0.18},
+	{"id": "wood", "name": "Wood", "weight": 0.28, "mat": "wood", "amount": 2},
+	{"id": "scrap", "name": "Scrap Metal", "weight": 0.26, "mat": "scrap", "amount": 2},
+	{"id": "cloth", "name": "Cloth", "weight": 0.20, "mat": "cloth", "amount": 2},
+	{"id": "bone", "name": "Bone", "weight": 0.12, "mat": "bone", "amount": 1},
+	{"id": "heal", "name": "Medkit Scrap", "weight": 0.08, "heal": 20},
+	{"id": "weapon", "name": "Fallen Weapon", "weight": 0.06},
 ]
 
 @export var default_count: int = 10
@@ -267,6 +270,13 @@ func _roll_item() -> Dictionary:
 
 func _apply_loot(player: Node, item: Dictionary) -> void:
 	var id: String = str(item.get("id", "heal"))
+	# Material drops feed CraftingSystem (Culling craft loop)
+	if item.has("mat"):
+		var craft := _find_crafting()
+		if craft and craft.has_method("add_material"):
+			craft.add_material(player, str(item["mat"]), int(item.get("amount", 1)))
+			item["applied"] = "mat_%s" % str(item["mat"])
+			return
 	match id:
 		"heal", "bandage":
 			var amount: int = int(item.get("heal", 20 if id == "heal" else 35))
@@ -283,10 +293,24 @@ func _apply_loot(player: Node, item: Dictionary) -> void:
 		"trap_kit":
 			_grant_trap_kit(player)
 			item["applied"] = "trap_kit"
+		"wood", "scrap", "cloth", "bone":
+			var craft2 := _find_crafting()
+			if craft2 and craft2.has_method("add_material"):
+				craft2.add_material(player, id, int(item.get("amount", 1)))
+			item["applied"] = "mat_%s" % id
 		_:
 			if player.has_method("heal_partial"):
 				player.heal_partial(15)
 			item["applied"] = "heal_default"
+
+
+func _find_crafting() -> Node:
+	var parent := get_parent()
+	if parent:
+		var c = parent.get_node_or_null("CraftingSystem")
+		if c:
+			return c
+	return null
 
 
 func _grant_random_weapon(player: Node) -> void:

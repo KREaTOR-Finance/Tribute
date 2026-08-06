@@ -35,6 +35,7 @@ var _p2_hp_text: Label
 
 var _banner_tween: Tween
 var _chain_label: Label
+var _mats_label: Label
 var _scav_panel: PanelContainer
 var _scav_bar: ProgressBar
 var _scav_label: Label
@@ -473,6 +474,33 @@ func _build_ui() -> void:
 	_chain_label.add_theme_constant_override("outline_size", 5)
 	_chain_label.visible = false
 	root.add_child(_chain_label)
+
+	# Materials / craft bag (Gauntlet)
+	_mats_label = Label.new()
+	_mats_label.name = "Materials"
+	_mats_label.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_mats_label.offset_left = -280
+	_mats_label.offset_top = -90
+	_mats_label.offset_right = -16
+	_mats_label.offset_bottom = -16
+	_mats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_mats_label.add_theme_font_size_override("font_size", 14)
+	_mats_label.add_theme_color_override("font_color", Color(0.85, 0.82, 0.7))
+	_mats_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_mats_label.add_theme_constant_override("outline_size", 3)
+	_mats_label.text = "MAT · W0 S0 C0 B0"
+	root.add_child(_mats_label)
+
+
+func set_materials(bag: Dictionary) -> void:
+	if _mats_label == null:
+		return
+	_mats_label.text = "MAT · W%d S%d C%d B%d  | T craft" % [
+		int(bag.get("wood", 0)),
+		int(bag.get("scrap", 0)),
+		int(bag.get("cloth", 0)),
+		int(bag.get("bone", 0)),
+	]
 
 
 func _make_fighter_panel(is_p1: bool) -> PanelContainer:

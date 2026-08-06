@@ -627,6 +627,8 @@ func _handle_combat_input(event):
 				_try_place_trap()
 			elif event.keycode == KEY_E:
 				_try_scavenge()
+			elif event.keycode == KEY_T:
+				_try_craft()
 	elif player_id == 2:
 		if event is InputEventKey and event.pressed:
 			if event.keycode == KEY_4:
@@ -677,17 +679,24 @@ func _try_scavenge() -> void:
 	if parent == null:
 		return
 	var scav = parent.get_node_or_null("ScavengingSystem")
-	if scav == null and parent.has_method("get") == false:
-		pass
 	if scav and scav.has_method("try_begin_scavenge"):
 		if scav.try_begin_scavenge(self):
-			# Slight slow while channeling — readable risk
 			velocity *= 0.35
 			print(name, " holding scavenge channel (stay still)")
 		return
-	# Fallback: scene-level helper
 	if parent.has_method("try_scavenge_for"):
 		parent.try_scavenge_for(self)
+
+
+func _try_craft() -> void:
+	if melee_state == MeleeState.DEAD:
+		return
+	var parent = get_parent()
+	if parent == null:
+		return
+	var craft = parent.get_node_or_null("CraftingSystem")
+	if craft and craft.has_method("try_craft_at_station"):
+		craft.try_craft_at_station(self)
 
 
 
@@ -1037,6 +1046,15 @@ func take_damage(amount: int, attacker: Node):
 		if scav and scav.has_method("cancel_for_player") and scav.has_method("is_channeling"):
 			if scav.is_channeling(self):
 				scav.cancel_for_player(self)
+
+	# Armor DR (Culling-style crafted armor)
+	if amount > 0 and parent_scav:
+		var craft = parent_scav.get_node_or_null("CraftingSystem")
+		if craft and craft.has_method("get_damage_reduction"):
+			var dr: float = float(craft.get_damage_reduction(self))
+			if dr > 0.0:
+				var reduced := int(round(float(amount) * (1.0 - dr)))
+				amount = maxi(1, reduced) if amount > 0 else 0
 
 	if is_blocking or melee_state == MeleeState.BLOCKING:
 		# Perfect block: first perfect_block_window seconds fully mitigate
